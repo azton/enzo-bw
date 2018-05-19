@@ -1,0 +1,302 @@
+#include "fortran.def"
+c=======================================================================
+c//////////////////////////  ZEUS_UTILITIES  \\\\\\\\\\\\\\\\\\\\\\\\\\\
+c=======================================================================
+
+
+c =====================================================================
+c
+      subroutine vanlr1_zc(q, idim, jdim, kdim, is, ie, j, k, 
+     &                     dx, dt, u, qstar)
+c
+      implicit none
+c
+c     arguments/parameters
+c
+      integer idim, jdim, kdim, is, ie, j, k, ijk
+      real q(idim,jdim,kdim), u(idim), qstar(idim), dx(idim), dt
+      parameter (ijk = MAX_ANY_SINGLE_DIRECTION)
+c
+c     locals
+c
+      integer i
+      real dq1(ijk), dq2(ijk)
+c
+c ---------------------------------------------------------------------
+c
+      do i = is-2, ie
+         dq1(i) = (q(i+1,j,k) - q(i,j,k))*dt/dx(i)
+      enddo
+c
+      do i = is-1, ie
+         if (dq1(i)*dq1(i-1) .gt. 0.0) then
+            dq2(i) = 2.0*dq1(i)*dq1(i-1)/(dq1(i-1) + dq1(i))
+         else
+            dq2(i) = 0.0
+         endif
+      enddo
+c
+      dq2(is-2) = dq1(is-2)
+      dq2(ie+1) = dq1(ie)
+      do i = is-1, ie+1
+         if (u(i) .gt. 0.0) then
+            qstar(i) = q(i-1,j,k) + (dx(i-1)/dt - u(i))*0.5*dq2(i-1)
+         else
+            qstar(i) = q(i  ,j,k) - (dx(i  )/dt + u(i))*0.5*dq2(i  )
+         endif
+      enddo
+c
+c      qstar(is-1) = 0.5*(q(is-1,j,k) + q(is-2,j,k))
+c      qstar(ie+1) = 0.5*(q(ie+1,j,k) + q(ie  ,j,k))
+c
+      return
+      end
+
+
+
+c =====================================================================
+c
+      subroutine vanlr1_fc(q, idim, jdim, kdim, is, ie, j, k, 
+     &                     dx, dt, u, qstar)
+c
+      implicit none
+c
+c     arguments/parameters
+c
+      integer idim, jdim, kdim, is, ie, j, k, ijk
+      real q(idim,jdim,kdim), u(idim), qstar(idim), dx(idim), dt
+      parameter (ijk = MAX_ANY_SINGLE_DIRECTION)
+c
+c     locals
+c
+      integer i
+      real dq1(ijk), dq2(ijk)
+c
+c ---------------------------------------------------------------------
+c
+      do i = is-1, ie+1
+         dq1(i) = (q(i+1,j,k) - q(i,j,k))*dt/dx(i)
+      enddo
+c
+      do i = is-1, ie
+         if (dq1(i)*dq1(i+1) .gt. 0.0) then
+            dq2(i) = 2.0*dq1(i)*dq1(i+1)/(dq1(i+1) + dq1(i))
+         else
+            dq2(i) = 0.0
+         endif
+      enddo
+c
+      dq2(is-2) = dq1(is-1)
+      dq2(ie+1) = dq1(ie+1)
+      do i = is-1, ie+1
+         if (u(i) .gt. 0.0) then
+            qstar(i) = q(i  ,j,k) + (dx(i  )/dt - u(i))*0.5*dq2(i-1)
+         else
+            qstar(i) = q(i+1,j,k) - (dx(i+1)/dt + u(i))*0.5*dq2(i  )
+         endif
+      enddo
+c
+c      qstar(is-1) = 0.5*(q(is-1,j,k) + q(is  ,j,k))
+c      qstar(ie+1) = 0.5*(q(is+1,j,k) + q(ie+2,j,k))
+c
+      return
+      end
+
+
+c =====================================================================
+c
+      subroutine vanlr2_zc(q, idim, jdim, kdim, js, je, i, k, 
+     &                     dy, dt, v, qstar)
+c
+      implicit none
+c
+c     arguments/parameters
+c
+      integer idim, jdim, kdim, js, je, i, k, ijk
+      real q(idim,jdim,kdim), v(jdim), qstar(jdim), dy(jdim), dt
+      parameter (ijk = MAX_ANY_SINGLE_DIRECTION)
+c
+c     locals
+c
+      integer j
+      real dq1(ijk), dq2(ijk)
+c
+c ---------------------------------------------------------------------
+c
+      do j = js-2, je
+         dq1(j) = (q(i,j+1,k) - q(i,j,k))*dt/dy(j)
+      enddo
+c
+      do j = js-1, je
+         if (dq1(j)*dq1(j-1) .gt. 0.0) then
+            dq2(j) = 2.0*dq1(j)*dq1(j-1)/(dq1(j-1) + dq1(j))
+         else
+            dq2(j) = 0.0
+         endif
+      enddo
+c
+      dq2(js-2) = dq1(js-2)
+      dq2(je+1) = dq1(je)
+      do j = js-1, je+1
+         if (v(j) .gt. 0.0) then
+            qstar(j) = q(i,j-1,k) + (dy(j-1)/dt - v(j))*0.5*dq2(j-1)
+         else
+            qstar(j) = q(i,j  ,k) - (dy(j  )/dt + v(j))*0.5*dq2(j  )
+         endif
+      enddo
+c
+c      qstar(js-1) = 0.5*(q(i,js-1,k) + q(i,js-2,k))
+c      qstar(je+1) = 0.5*(q(i,je+1,k) + q(i,je  ,k))
+c
+      return
+      end
+
+
+
+c =====================================================================
+c
+      subroutine vanlr2_fc(q, idim, jdim, kdim, js, je, i, k, 
+     &                     dy, dt, v, qstar)
+c
+      implicit none
+c
+c     arguments/parameters
+c
+      integer idim, jdim, kdim, js, je, i, k, ijk
+      real q(idim,jdim,kdim), v(jdim), qstar(jdim), dy(jdim), dt
+      parameter (ijk = MAX_ANY_SINGLE_DIRECTION)
+c
+c     locals
+c
+      integer j
+      real dq1(ijk), dq2(ijk)
+c
+c ---------------------------------------------------------------------
+c
+      do j = js-1, je+1
+         dq1(j) = (q(i,j+1,k) - q(i,j,k))*dt/dy(j)
+      enddo
+c
+      do j = js-1, je
+         if (dq1(j)*dq1(j+1) .gt. 0.0) then
+            dq2(j) = 2.0*dq1(j)*dq1(j+1)/(dq1(j+1) + dq1(j))
+         else
+            dq2(j) = 0.0
+         endif
+      enddo
+c
+      dq2(js-2) = dq1(js-1)
+      dq2(je+1) = dq1(je+1)
+      do j = js-1, je+1
+         if (v(j) .gt. 0.0) then
+            qstar(j) = q(i,j  ,k) + (dy(j  )/dt - v(j))*0.5*dq2(j-1)
+         else
+            qstar(j) = q(i,j+1,k) - (dy(j+1)/dt + v(j))*0.5*dq2(j  )
+         endif
+      enddo
+c
+c      qstar(js-1) = 0.5*(q(i,js-1,k) + q(i,js  ,k))
+c      qstar(je+1) = 0.5*(q(i,js+1,k) + q(i,je+2,k))
+c
+      return
+      end
+
+
+c =====================================================================
+c
+      subroutine vanlr3_zc(q, idim, jdim, kdim, ks, ke, i, j, 
+     &                     dz, dt, w, qstar)
+c
+      implicit none
+c
+c     arguments/parameters
+c
+      integer idim, jdim, kdim, ks, ke, i, j, ijk
+      real q(idim,jdim,kdim), w(kdim), qstar(kdim), dz(kdim), dt
+      parameter (ijk = MAX_ANY_SINGLE_DIRECTION)
+c
+c     locals
+c
+      integer k
+      real dq1(ijk), dq2(ijk)
+c
+c ---------------------------------------------------------------------
+c
+      do k = ks-2, ke
+         dq1(k) = (q(i,j,k+1) - q(i,j,k))*dt/dz(k)
+      enddo
+c
+      do k = ks-1, ke
+         if (dq1(k)*dq1(k-1) .gt. 0.0) then
+            dq2(k) = 2.0*dq1(k)*dq1(k-1)/(dq1(k-1) + dq1(k))
+         else
+            dq2(k) = 0.0
+         endif
+      enddo
+c
+      dq2(ks-2) = dq1(ks-2)
+      dq2(ke+1) = dq1(ke)
+      do k = ks-1, ke+1
+         if (w(k) .gt. 0.0) then
+            qstar(k) = q(i,j,k-1) + (dz(k-1)/dt - w(k))*0.5*dq2(k-1)
+         else
+            qstar(k) = q(i,j,k  ) - (dz(k  )/dt + w(k))*0.5*dq2(k  )
+         endif
+      enddo
+c
+c      qstar(ks-1) = 0.5*(q(i,j,ks-1) + q(i,j,ks-2))
+c      qstar(ke+1) = 0.5*(q(i,j,ke+1) + q(i,j,ke  ))
+c
+      return
+      end
+
+
+
+c =====================================================================
+c
+      subroutine vanlr3_fc(q, idim, jdim, kdim, ks, ke, i, j, 
+     &                     dz, dt, w, qstar)
+c
+      implicit none
+c
+c     arguments/parameters
+c
+      integer idim, jdim, kdim, ks, ke, i, j, ijk
+      real q(idim,jdim,kdim), w(jdim), qstar(jdim), dz(jdim), dt
+      parameter (ijk = MAX_ANY_SINGLE_DIRECTION)
+c
+c     locals
+c
+      integer k
+      real dq1(ijk), dq2(ijk)
+c
+c ---------------------------------------------------------------------
+c
+      do k = ks-1, ke+1
+         dq1(k) = (q(i,j,k+1) - q(i,j,k))*dt/dz(k)
+      enddo
+c
+      do k = ks-1, ke
+         if (dq1(k)*dq1(k+1) .gt. 0.0) then
+            dq2(k) = 2.0*dq1(k)*dq1(k+1)/(dq1(k+1) + dq1(k))
+         else
+            dq2(k) = 0.0
+         endif
+      enddo
+c
+      dq2(ks-2) = dq1(ks-1)
+      dq2(ke+1) = dq1(ke+1)
+      do k = ks-1, ke+1
+         if (w(k) .gt. 0.0) then
+            qstar(k) = q(i,j,k  ) + (dz(k  )/dt - w(k))*0.5*dq2(k-1)
+         else
+            qstar(k) = q(i,j,k+1) - (dz(k+1)/dt + w(k))*0.5*dq2(k  )
+         endif
+      enddo
+c
+c      qstar(ks-1) = 0.5*(q(i,j,ks-1) + q(i,j,ks  ))
+c      qstar(ke+1) = 0.5*(q(i,j,ke+1) + q(i,j,ke+2))
+c
+      return
+      end
+

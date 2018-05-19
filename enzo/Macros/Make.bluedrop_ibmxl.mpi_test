@@ -1,0 +1,78 @@
+#
+# macros for IBM Power7 BlueDrop MPI
+#
+
+CPP          = /usr/bin/cpp
+CPP_FLAG     = -traditional
+
+IBM_HDF5_INSTALL = ${HDF5_INSTALL}
+IBM_HDF5_INCLUDE = -I$(IBM_HDF5_INSTALL)/include
+
+IBM_HYPRE_INSTALL = ${HYPRE_INSTALL}
+IBM_HYPRE_INCLUDE = -I$(IBM_HYPRE_INSTALL)/include
+
+IBM_SZLIB_INSTALL =
+IBM_SPRNG_INSTALL = 
+IBM_SPRNG_INCLUDE = -I$(IBM_SPRNG_INSTALL)/include
+
+IBM_ZLIB = /usr/lib
+
+ifeq ($(ENZO_INT),LARGE_INTS)
+  ifeq ($(ENZO_XPR),r8)
+    IBM_FC_PREC := -qintsize=8 -qrealsize=8 -qdpc=e
+  else
+    IBM_FC_PREC := -qintsize=8 -qrealsize=4
+  endif
+else
+  ifeq ($(ENZO_XPR),r8)
+    IBM_FC_PREC := -qintsize=4 -qrealsize=8 -qdpc=e
+  else
+    IBM_FC_PREC := -qintsize=4 -qrealsize=4
+  endif
+endif
+
+IBM_FC_ARITH = -qstrict
+IBM_FC_THREAD = -qthreaded
+IBM_FC_OPT = -O3 -qmaxmem=-1 -qsimd=auto -qtune=pwr7 -qarch=pwr7 -qcache=auto
+IBM_FC_SRC = -qfixed=132
+IBM_FC_DEBUG =
+
+IBM_F90_SRC = -qsuffix=f=f90 -qfree
+
+IBM_CC_ARITH = -qstrict
+IBM_CC_THREAD = -qthreaded
+IBM_CC_OPT = -O3 -qtune=pwr7 -qarch=pwr7 -qcache=auto
+IBM_CC_DEBUG =
+
+IBM_CXX_ARITH = -qstrict
+IBM_CXX_THREAD = -qthreaded
+IBM_CXX_OPT = -O3 -qsimd=noauto -qtune=pwr7 -qarch=pwr7 -qcache=auto
+IBM_CXX_DEBUG =
+
+## Fortran compiler
+FC           = mpfort -compiler /opt/ibmcmp/xlf/13.1/bin/xlf90_r
+FC_DEF       = -DUSE_MPI -DNO_IO_LOG -DLINUX_IBM_XL
+FC_OPT       = $(IBM_FC_OPT) $(IBM_FC_THREAD) $(IBM_FC_ARITH) $(IBM_FC_SRC) $(IBM_FC_PREC)
+FREE90       = -qsuffix=f=f90 -qfree
+
+## C Compiler
+CC           = mpcc
+CC_DEF       = -DLINUX_IBM_XL -DUSE_MPI -DNO_IO_LOG -D MEM_TRACE
+CC_OPT       = $(IBM_CC_OPT) $(IBM_CC_THREAD) $(IBM_CC_ARITH)
+
+## C++ Compiler (qldbl128 required if using p16)
+CCxx	     = mpCC -DH5_USE_16_API -D__NO_MATH_INLINES
+CCxx_DEF     = -DLINUX_IBM_XL -DUSE_MPI -DNO_IO_LOG -DMEM_TRACE -DHYBRID
+CCxx_OPT     = $(IBM_CXX_OPT) $(IBM_CXX_THREAD) $(IBM_CXX_ARITH)   
+
+## Linker/loader
+LDR          = mpCC
+LDR_OPT      = $(IBM_CXX_OPT) $(IBM_CXX_THREAD) $(IBM_CXX_ARITH)
+LIB          = \
+               -L${IBM_HYPRE_INSTALL}/lib -lHYPRE \
+               -L${IBM_HDF5_INSTALL}/lib -lhdf5 \
+               /usr/lib/libz.a \
+               -L/opt/ibmcmp/xlf/13.1/lib64 -lxl -lxlf90_r -lxlf90_t -lxlfmath -lxlopt -lxlfpad -lxlfpmt4 -lxlfpmt8
+
+OPTS         = -c -I${IBM_HDF5_INSTALL}/include -I$(IBM_HYPRE_INSTALL)/include
+DEBUG        = 

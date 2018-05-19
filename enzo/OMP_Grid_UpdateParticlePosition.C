@@ -1,0 +1,122 @@
+/***********************************************************************
+/
+/  GRID CLASS (UPDATE PARTICLE POSITION FOR VELOCITY)
+/
+/  written by: Greg Bryan
+/  date:       May, 1995
+/  modified1:  Robert Harkness
+/  date:       9th August 2008
+/              Simple OpenMP threading
+/  modified1:  David Collins
+/  date:       July, 2009
+/              Added OffProcessorUpdate.  This is to fix an error in
+/              DepositParticlePositions wherein particles need to be updated
+/              before being interpolated into the Parent grid's
+/              GravitatingMassFieldParticles, and the Parent may
+/              be on a different process.
+/
+/  PURPOSE:
+/
+/  NOTE:
+/
+************************************************************************/
+ 
+#include <stdio.h>
+#include <math.h>
+
+#include "macros_and_parameters.h"
+#include "typedefs.h"
+#include "global_data.h"
+#include "Fluxes.h"
+#include "GridList.h"
+#include "ExternalBoundary.h"
+#include "Grid.h"
+ 
+/* function prototypes */
+ 
+int CosmologyComputeExpansionFactor(FLOAT time, FLOAT *a, FLOAT *dadt);
+ 
+ 
+int grid::UpdateParticlePosition(float TimeStep, int OffProcessorUpdate)
+{
+ 
+  /* Return if this doesn't concern us. */
+
+  /* OffProcessorUpdate defaults to FALSE */
+  if (ProcessorNumber != MyProcessorNumber && OffProcessorUpdate == FALSE)
+    return SUCCESS;
+ 
+  if (NumberOfParticles == 0) return SUCCESS;
+ 
+  FLOAT a = 1.0, dadt;
+  int i, dim;
+ 
+//  if (debug)
+//    printf("UpdateParticlePosition: moving %"ISYM" particles forward by %"FSYM".\n",
+//	   NumberOfParticles, TimeStep);
+ 
+  /* If using comoving coordinates, divide the acceleration by a(t) first.
+     (We use abs(TimeStep) because this routine is occasionally used to
+     move particles forward dt and then immediately reverse this (-dt);
+     using abs(dt) keeps things consistent). */
+ 
+  if (ComovingCoordinates)
+    if (CosmologyComputeExpansionFactor(Time + 0.5*fabs(TimeStep), &a, &dadt)
+	== FAIL) {
+      fprintf(stderr, "Error in CsomologyComputeExpansionFactors.\n");
+      return FAIL;
+    }
+ 
+  /* Loop over dimensions. */
+ 
+  for (dim = 0; dim < GridRank; dim++) {
+ 
+    /* Error check. */
+ 
+    if (ParticleVelocity[dim] == NULL) {
+      fprintf(stderr, "No ParticleVelocity present.\n");
+      return FAIL;
+    }
+
+  }
+ 
+ 
+  float Coefficient = TimeStep/a;
+
+  for (dim = 0; dim < GridRank; dim++) {
+
+    /* update velocities. */
+
+#ifdef INTEL_OMP_SYNTAX
+#pragma omp parallel private(i) shared(Coefficient, dim) default(none)
+#else
+#pragma omp parallel private(i) shared(NumberOfParticles, ParticlePosition, ParticleVelocity, Coefficient, dim) default(none)
+#endif
+  {
+
+#pragma omp for schedule(static)
+    for (i = 0; i < NumberOfParticles; i++) {
+      ParticlePosition[dim][i] += Coefficient*ParticleVelocity[dim][i];
+    }
+
+  } // end parallel region
+
+  } // end loop over dims
+ 
+    /* particle positions wrap for periodic case
+       is done in CommunicationTransferParticles */
+ 
+#ifdef UNUSED
+  for (dim = 0; dim < GridRank; dim++) {
+    FLOAT Width = DomainRightEdge[dim] - DomainLeftEdge[dim];
+    for (i = 0; i < NumberOfParticles; i++) {
+      if (ParticlePosition[dim][i] > DomainRightEdge[dim])
+	ParticlePosition[dim][i] -= Width;
+      if (ParticlePosition[dim][i] < DomainLeftEdge[dim])
+	ParticlePosition[dim][i] += Width;
+    }
+  }
+#endif /* UNUSED */
+ 
+  return SUCCESS;
+}

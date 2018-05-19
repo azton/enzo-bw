@@ -1,0 +1,104 @@
+#
+# macros for stella
+#
+
+CPP          = /usr/bin/cpp
+CPP_FLAG     = -P -traditional
+
+DEBUG = NO
+
+LOCAL_FC_INSTALL     = /usr/lib/gcc/x86_64-linux-gnu
+LOCAL_HDF5_INSTALL   = /usr/
+ifeq ($(DEBUG),YES)
+  LOCAL_HYPRE_INSTALL  = /usr/local/hypre-2.9.1a/gnu_debug
+else
+  LOCAL_HYPRE_INSTALL  = /usr/local/hypre-2.9.1a/gnu
+endif
+
+LOCAL_HDF5_INCLUDE = -I$(LOCAL_HDF5_INSTALL)/include
+LOCAL_HYPRE_INCLUDE = -I$(LOCAL_HYPRE_INSTALL)/include
+
+ifeq ($(CRAYPAT_ROOT),$(null))
+XT5_PAT =
+XT5_PAT_INCLUDE =
+XT5_PAT_CONF = -DNO_USE_PAT
+else
+XT5_PAT = $(CRAYPAT_ROOT)/lib/xt-cnl/lib_pat.a
+XT5_PAT_INCLUDE = -I$(CRAYPAT_ROOT)/include
+XT5_PAT_CONF = -DUSE_PAT
+endif
+
+ifeq ($(ENZO_INT),LARGE_INTS)
+  ifeq ($(ENZO_XPR),r8)
+    GNU_FC_PREC := -fdefault-real-8 -fdefault-integer-8
+  else
+    GNU_FC_PREC := -fdefault-integer-8
+  endif
+else
+  ifeq ($(ENZO_XPR),r8)
+    GNU_FC_PREC := -fdefault-real-8
+  else
+    GNU_FC_PREC := 
+  endif
+endif
+
+GNU_FC_ARITH = 
+GNU_FC_THREAD =
+GNU_FC_OPT = -O2
+GNU_FC_DEBUG = -O0 -g
+
+GNU_CC_ARITH = 
+GNU_CC_THREAD =
+GNU_CC_OPT = -O2
+GNU_CC_DEBUG = -O0 -g
+
+GNU_CXX_ARITH = 
+GNU_CXX_THREAD =
+GNU_CXX_OPT = -O2
+GNU_CXX_DEBUG = -O0 -g
+
+
+## Fortran compiler
+FC      = mpif90
+DEFINES = -DLINUX_INTEL_X86_64 -DUSE_MPI -DNO_IO_LOG
+ifeq ($(DEBUG),YES)
+  FC_OPT = $(GNU_FC_DEBUG) $(GNU_FC_THREAD) $(GNU_FC_ARITH) $(GNU_FC_PREC)
+else
+  FC_OPT = $(GNU_FC_OPT) $(GNU_FC_THREAD) $(GNU_FC_ARITH) $(GNU_FC_PREC)
+endif
+
+## C Compiler
+CC      = mpicc
+CC_DEF  = -DLINUX_INTEL_X86_64 -DUSE_MPI -DNO_IO_LOG -DSYSCALL
+ifeq ($(DEBUG),YES)
+  CC_OPT = $(GNU_CC_DEBUG) $(GNU_CC_THREAD) $(GNU_CC_ARITH) $(CC_DEF)
+else
+  CC_OPT = $(GNU_CC_OPT) $(GNU_CC_THREAD) $(GNU_CC_ARITH) $(CC_DEF)
+endif
+
+## C++ Compiler
+CCxx     = mpicxx
+CCxx_DEF = -DLINUX_INTEL_X86_64 -DUSE_MPI -DNO_IO_LOG -DSYSCALL -DMPICH_IGNORE_CXX_SEEK -DH5_USE_16_API
+ifeq ($(DEBUG),YES)
+  CCxx_OPT = $(GNU_CXX_DEBUG) $(GNU_CXX_THREAD) $(GNU_CXX_ARITH) $(CCxx_DEF)
+else
+  CCxx_OPT = $(GNU_CXX_OPT) $(GNU_CXX_THREAD) $(GNU_CXX_ARITH) $(CCxx_DEF)
+endif
+
+## Linker/loader
+GNU_F90_LINK = -L$(LOCAL_FC_INSTALL) -lgfortran
+
+LDR     = $(CCxx)
+LDR_OPT = $(GNU_CXX_OPT) $(GNU_CXX_THREAD) $(GNU_CXX_ARITH)
+LIB     = \
+          $(GNU_F90_LINK) \
+	  -L$(LOCAL_HYPRE_INSTALL)/lib -lHYPRE \
+          -L$(LOCAL_HDF5_INSTALL)/lib -lhdf5 \
+          -L$(LOCAL_SZIP_INSTALL)/lib -lm -lz
+
+INCLUDE = $(LOCAL_HDF5_INCLUDE) $(LOCAL_HYPRE_INCLUDE) $(XT5_PAT_INCLUDE)
+
+OPTIONS = 
+OPTS    = -c ${OPTIONS} ${INCLUDE}
+DEBUG   =
+

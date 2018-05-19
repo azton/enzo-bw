@@ -1,0 +1,42 @@
+#
+# macros for XT3
+#
+
+HDF5_INSTALL = /sw/xt/hdf5/1.8.5/cnl2.2_pgi10.4.0
+HDF5_INCLUDE = $(HDF5_INSTALL)/include
+
+CPP          = /lib/cpp
+DEFINES      = -DXT3
+OPTIONS      = 
+
+## Fortran compiler
+FC           = pgf90
+FC_OPT       = -O2 -Mflushz -Mextend
+
+## C Compiler
+CC           = pgcc
+CC_OPT       = -O0 -DXT3 -Mflushz
+
+## C++ Compiler
+CCxx	     = pgCC -DH5_USE_16_API
+CCxx_OPT     = -O2 -DXT3 -Mflushz
+
+SZLIB = /sw/xt/szip/2.1/sles10.1_pgi9.0.1
+ZLIB  = /usr/lib
+ACML  = /opt/acml/4.3.0/pgi64_int64
+
+## Linker/loader
+# -pgf90libs
+LDR          = pgCC -pgf77libs -pgf90libs
+LDR_OPT      =
+LIB          = -L$(HDF5_INSTALL)/lib -lhdf5 \
+               -L$(SZLIB)/lib -lsz -lz \
+               -L$(ACML)/lib -lacml \
+               -lm
+#               -L/opt/pgi/$(PGI_VERS_STR)/linux86-64/$(PGI_VERS_STR)/lib \
+#               -lpgf90 -lpgf90_rpm1 -lpgf902 -lpgf90rtl -lpgftnrtl
+
+INCLUDE      = -I$(HDF5_INSTALL)/include
+
+OPTS         = -c ${OPTIONS} ${INCLUDE}
+DEBUG        =

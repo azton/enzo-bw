@@ -1,0 +1,104 @@
+#
+# macros for stella
+#
+
+CPP          = /usr/bin/cpp
+CPP_FLAG     = -traditional
+
+LOCAL_MPI_INSTALL    = /usr/local/mpich2-1.0.7/intel
+LOCAL_FC_INSTALL     = /opt/intel/Compiler/new/lib
+#LOCAL_HDF5_INSTALL   = /usr/local/hdf5-1.6.9/intel_serial
+LOCAL_HDF5_INSTALL   = /usr/local/hdf5-1.8.5-patch1
+LOCAL_SZIP_INSTALL   = /usr/local
+#LOCAL_HYPRE_INSTALL  = /usr/local/hypre-2.6.0b/intel_hybrid
+LOCAL_HYPRE_INSTALL  = /usr/local/hypre-2.6.0b/intel
+LOCAL_LAPACK_INSTALL = /usr/local/atlas/intel
+
+
+LOCAL_HDF5_INCLUDE = -I$(LOCAL_HDF5_INSTALL)/include
+LOCAL_HYPRE_INCLUDE = -I$(LOCAL_HYPRE_INSTALL)/include
+LOCAL_SPRNG_INSTALL = /none
+LOCAL_SPRNG_INCLUDE = -I$(LOCAL_SPRNG_INSTALL)/include
+
+LOCAL_ACML = /none
+LOCAL_ZLIB = /usr/local/lib
+
+ifeq ($(CRAYPAT_ROOT),$(null))
+XT5_PAT =
+XT5_PAT_INCLUDE =
+XT5_PAT_CONF = -DNO_USE_PAT
+else
+XT5_PAT = $(CRAYPAT_ROOT)/lib/xt-cnl/lib_pat.a
+XT5_PAT_INCLUDE = -I$(CRAYPAT_ROOT)/include
+XT5_PAT_CONF = -DUSE_PAT
+endif
+
+ifeq ($(ENZO_INT),LARGE_INTS)
+  ifeq ($(ENZO_XPR),r8)
+    INTEL_FC_PREC := -real-size 64 -integer-size 64
+  else
+    INTEL_FC_PREC := -real-size 32 -integer-size 64
+  endif
+else
+  ifeq ($(ENZO_XPR),r8)
+    INTEL_FC_PREC := -real-size 64 -integer-size 32
+  else
+    INTEL_FC_PREC := -real-size 32 -integer-size 32
+  endif
+endif
+
+INTEL_FC_ARITH = -fpconstant -ftz -prec-div -prec-sqrt -fp-port -align -zero
+INTEL_FC_THREAD = -openmp
+INTEL_FC_OPT = -O2 -extend-source -inline-level=0 -static-intel -static-libcxa 
+#INTEL_FC_DEBUG = -g -traceback -fpe0 -ftrapuv -fp-speculation off -opt-report 2 -vec-report 2 -openmp-report 2 -par-report 2
+INTEL_FC_DEBUG = -g -traceback -fpe0 -ftrapuv -fp-speculation=safe
+
+INTEL_CC_ARITH = -ftz -prec-div -prec-sqrt -fp-port -align -zero
+INTEL_CC_THREAD = -openmp
+INTEL_CC_OPT = -O2 -inline-level=0 -static-intel -static-libgcc
+#INTEL_CC_DEBUG = -g -traceback -fpe0 -ftrapuv -fp-speculation off -opt-report 2 -vec-report 2 -openmp-report 2 -par-report 2
+INTEL_CC_DEBUG = -g -traceback -fpe0 -ftrapuv -fp-speculation=safe
+
+INTEL_CXX_ARITH = -ftz -prec-div -prec-sqrt -fp-port -align -zero
+INTEL_CXX_THREAD = -openmp
+INTEL_CXX_OPT = -O2 -inline-level=0 -static-intel -static-libgcc
+#INTEL_CXX_DEBUG = -g -traceback -fpe0 -ftrapuv -fp-speculation off -opt-report 2 -vec-report 2 -openmp-report 2 -par-report 2
+INTEL_CXX_DEBUG = -g -traceback -fpe0 -ftrapuv -fp-speculation=safe
+
+
+## Fortran compiler
+FC           = $(LOCAL_MPI_INSTALL)/bin/mpif90
+DEFINES      = -DLINUX_INTEL_X86_64 -DUSE_MPI -DNO_IO_LOG
+#FC_OPT       = $(INTEL_FC_OPT) $(INTEL_FC_THREAD) $(INTEL_FC_ARITH) $(INTEL_FC_PREC)
+FC_OPT       = $(INTEL_FC_DEBUG) $(INTEL_FC_THREAD) $(INTEL_FC_ARITH) $(INTEL_FC_PREC)
+
+## C Compiler
+CC           = $(LOCAL_MPI_INSTALL)/bin/mpicc
+CC_DEF       = -DLINUX_INTEL_X86_64 -DUSE_MPI -DNO_IO_LOG -DSYSCALL
+#CC_OPT       = $(INTEL_CC_OPT) $(INTEL_CC_THREAD) $(INTEL_CC_ARITH) $(CC_DEF)
+CC_OPT       = $(INTEL_CC_DEBUG) $(INTEL_CC_THREAD) $(INTEL_CC_ARITH) $(CC_DEF)
+
+## C++ Compiler
+CCxx         = $(LOCAL_MPI_INSTALL)/bin/mpicxx
+CCxx_DEF     = -DLINUX_INTEL_X86_64 -DUSE_MPI -DNO_IO_LOG -DSYSCALL -DMPICH_IGNORE_CXX_SEEK -DH5_USE_16_API
+#CCxx_OPT     = $(INTEL_CXX_OPT) $(INTEL_CXX_THREAD) $(INTEL_CXX_ARITH) $(CCxx_DEF)
+CCxx_OPT     = $(INTEL_CXX_DEBUG) $(INTEL_CXX_THREAD) $(INTEL_CXX_ARITH) $(CCxx_DEF)
+
+## Linker/loader
+
+LOCAL_FC_INSTALL = /opt/intel/Compiler/new/lib
+INTEL_CXX_LINK = -L$(INTEL_LIB) -lifcore -lirc -limf -lifport -liomp5
+
+LDR          = $(FC)
+LDR_OPT      = $(INTEL_FC_OPT) $(INTEL_FC_THREAD) $(INTEL_FC_ARITH) -cxxlib -nofor_main
+LIB          = \
+               $(INTEL_CXX_LINK) \
+	       -L$(LOCAL_HYPRE_INSTALL)/lib -lHYPRE \
+               -L$(LOCAL_HDF5_INSTALL)/lib -lhdf5 \
+               -L$(LOCAL_SZIP_INSTALL)/lib -lsz -lm -lz
+
+INCLUDE      = $(LOCAL_HDF5_INCLUDE) $(LOCAL_HYPRE_INCLUDE) $(XT5_PAT_INCLUDE)
+
+OPTIONS      = 
+OPTS         = -c ${OPTIONS} ${INCLUDE}
+DEBUG        =

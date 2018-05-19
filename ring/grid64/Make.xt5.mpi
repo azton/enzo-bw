@@ -1,0 +1,46 @@
+#
+# macros for Cray XT
+#
+
+ifeq ($(HDF5_INSTALL),$(null))
+HDF5_INSTALL = $(HOME)/hdf5/5-1.6.5-xt3
+endif
+
+HDF5_INCLUDE = $(HDF5_INSTALL)/include
+
+CPP          = /lib/cpp
+DEFINES      = -DXT3 -DUSE_MPI -DNO_IO_LOG
+OPTIONS      = 
+
+## Fortran compiler
+FC           = ftn
+FC_OPT       = -O1 -Mflushz -Mdaz -fastsse -Mnontemporal -Mnofprelaxed -Mvect=altcode,assoc,prefetch -Kieee -Mextend
+
+## C Compiler
+CC           = cc
+CC_OPT       = -O3 -DXT3 -DUSE_MPI -DNO_IO_LOG -DSYSCALL -Mflushz -Mdaz -fastsse -Mnontemporal -Mnofprelaxed -Mvect=altcode,assoc,prefetch -Kieee
+
+## C++ Compiler
+CCxx         = CC -DMPICH_IGNORE_CXX_SEEK -DH5_USE_16_API
+CCxx_OPT     = -O3 -DXT3 -DUSE_MPI -DNO_IO_LOG -DSYSCALL -Mflushz -Mdaz -fastsse -Mnontemporal -Mnofprelaxed -Mvect=altcode,assoc,prefetch -Kieee
+
+## -Msafeptr UNSAFE
+## -Mprefetch=distance:8,nta
+##  --no_exceptions  doesn't work with MPI
+
+## Linker/loader
+
+SZLIB = /sw/xt/szip/2.1/sles10.1_pgi10.4.0/lib
+ZLIB  = /usr/lib
+ACML  = /opt/acml/default/pgi64
+
+LDR          = CC -pgf77libs -pgf90libs
+LDR_OPT      = -Mdaz -Mflushz -fastsse -Mnontemporal -Mnofprelaxed -Mvect=altcode,assoc,prefetch -Kieee -Wl,-static
+LIB          = -L$(HDF5_INSTALL)/lib -lhdf5 \
+               -L$(SZLIB) -lsz -lz \
+               -lm
+
+INCLUDE      = -I$(HDF5_INSTALL)/include
+
+OPTS         = -c ${OPTIONS} ${INCLUDE}
+DEBUG        =

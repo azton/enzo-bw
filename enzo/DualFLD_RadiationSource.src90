@@ -1,0 +1,283 @@
+!=======================================================================
+! Copyright 2013 Daniel R. Reynolds
+!
+! This software is released under the terms of the "Enzo Public License"
+! in the accompanying LICENSE file.
+!=======================================================================
+subroutine DualFLD_RadiationSource(srcUV, srcXr, ProbType, XrayOnly, &
+     UVSpec, UVFreq, XrSpec, XrFreq, NGammaDotUV, NGammaDotXr,       &
+     EtaRadius, EtaCenter, LenUnits, N, NG, xB, ier)
+!=======================================================================
+!  author: Daniel R. Reynolds
+!  date:   January 2013
+!
+!  PURPOSE: computes the emissivities for the radiation energy equations
+!
+!  INPUTS:
+!     ProbType     - flag denoting physical problem to run
+!     UVSpec       - UV radiation spectrum type:
+!                       2 -> PopII spectrum
+!                       1 -> 1e5 black body spectrum
+!                       0 -> power law spectrum
+!                      -1 -> monochromatic
+!     UVFreq       - frequency for monochromatic UV source
+!     XrSpec       - X-ray radiation spectrum type (as above)
+!     XrFreq       - frequency for monochromatic X-ray source
+!     NGammaDotUV  - UV source strength
+!     NGammaDotXr  - X-ray source strength
+!     EtaRadius    - source radius in cells
+!     EtaCenter(3) - source center (comoving, 3D coordinates in cm)
+!     LenUnits     - length scaling factor
+!     N(3)         - active mesh size in each dimension
+!     NG(6)        - l/r ghost cells in each dim (xl, xr, yl, ...)
+!     xB(6)        - subdomain boundaries (comoving, no ghosts)
+!
+!     Note: the vector inputs are of size (N(1) + NG(1) + NG(2)) in 
+!     the x-direction, others are similar.
+!
+!  OUTPUT ARGUMENTS: 
+!     srcUV - array of UV emissivity sources
+!     srcXr - array of X-ray emissivity sources
+!     ier   - success/failure flag (1->success, 0->failure)
+!=======================================================================
+  implicit none
+#include "fortran.def"
+
+  ! arguments
+  integer,  intent(in)  :: ProbType, XrayOnly, UVSpec, XrSpec
+  integer,  intent(in)  :: N(3), NG(6)
+  integer,  intent(out) :: ier
+  REALSUBR, intent(in)  :: NGammaDotUV, NGammaDotXr, UVFreq, XrFreq
+  REALSUBR, intent(in)  :: EtaCenter(3)
+  REALSUBR, intent(in)  :: LenUnits, EtaRadius
+  REALSUBR, intent(in)  :: xB(6)
+  REALSUBR, intent(out), &
+       dimension(1-NG(1):N(1)+NG(2),1-NG(3):N(2)+NG(4),1-NG(5):N(3)+NG(6)) &
+       :: srcUV, srcXr
+  
+  ! local vars
+  integer :: i, j, k
+  REALSUBR :: pi, hnu0, dx, dy, dz, dV, ev2erg
+  REALSUBR :: etaconstUV, etaconstXr, specconstUV, specconstXr
+  REALSUBR :: cellXl, cellXr, cellYl, cellYr, cellZl, cellZr
+  REALSUBR :: cellXc, cellYc, cellZc, srcCenter(3), srcRadius
+
+  !=======================================================================
+
+  ! initialize output to have all zero values, flag to success
+  srcXr = 0.d0
+  if (XrayOnly == 0)  srcUV = 0.d0
+  ier   = 1
+  
+  ! initialize constants
+  pi   = 4.d0*datan(1.d0)
+  dx   = (xB(2)-xB(1))/N(1)        ! mesh spacing (comoving), x0 direction
+  dy   = (xB(4)-xB(3))/N(2)        ! mesh spacing (comoving), x1 direction
+  dz   = (xB(6)-xB(5))/N(3)        ! mesh spacing (comoving), x2 direction
+  dV   = dx*dy*dz*(LenUnits)**3    ! cell volume (proper)
+  ev2erg = 1.60217653e-12
+  hnu0 = 13.6d0*ev2erg             ! ionization energy of HI [ergs]
+
+  ! scaling factors for spectra
+  !   = (int_{nu0}^{infty} chi(nu) dnu) / (int_{0}^{infty} chi(nu)*(nu0/nu) dnu)
+  ! where chi(nu) is the SED for the emitting source 
+  if (UVSpec == 1) then         ! T=10^5 blackbody 
+     specconstUV = 1.52877652583602d0
+  elseif (UVSpec == 0) then     ! power law
+     specconstUV = 1.d0
+  else                          ! monochromatic at hnu=UVFreq
+     specconstUV = UVFreq*ev2erg/hnu0
+  endif
+
+  if (XrSpec == 1) then         ! T=10^5 blackbody 
+     specconstXr = 1.52877652583602d0
+  elseif (XrSpec == 0) then     ! power law
+     specconstXr = 1.d0
+  else                          ! monochromatic at hnu=XrFreq
+     specconstXr = XrFreq*ev2erg/hnu0
+  endif
+
+  ! compute emissivity based on ProbType:
+
+  ! point-source emissivity at location (EtaCenter(1:3))
+  if ((ProbType == 210) .or. (ProbType == 211) .or. &
+      (ProbType == 213) .or. (ProbType == 215)) then
+
+     if (EtaRadius == 0.d0) then       ! one-cell source
+       
+        ! compute eta factors for given ionization source
+        etaconstUV = hnu0*NGammaDotUV*specconstUV/dV
+        etaconstXr = hnu0*NGammaDotXr*specconstXr/dV
+        
+        do k=1,N(3)
+           cellZl = xB(5) + (k-1)*dz         ! comoving z-boundaries for cell
+           cellZr = cellZl + dz
+           
+           do j=1,N(2)
+              cellYl = xB(3) + (j-1)*dy      ! comoving y-boundaries for cell
+              cellYr = cellYl + dy
+              
+              do i=1,N(1)
+                 cellXl = xB(1) + (i-1)*dx   ! comoving x-boundaries for cell
+                 cellXr = cellXl + dx
+                 
+                 ! see if source center is in cell (or on left edge)
+                 if ( (cellXl <= EtaCenter(1)) .and. (cellXr > EtaCenter(1)) .and. &
+                      (cellYl <= EtaCenter(2)) .and. (cellYr > EtaCenter(2)) .and. &
+                      (cellZl <= EtaCenter(3)) .and. (cellZr > EtaCenter(3)) ) then
+                    srcXr(i,j,k) = etaconstXr
+                    if (XrayOnly == 0)  srcUV(i,j,k) = etaconstUV
+                 endif
+
+              enddo
+           enddo
+        enddo
+
+     else  ! multi-cell source
+
+        ! compute eta factors for given ionization source
+        etaconstUV = hnu0*NGammaDotUV*specconstUV/dV/8.d0/(EtaRadius**3)
+        etaconstXr = hnu0*NGammaDotXr*specconstXr/dV/8.d0/(EtaRadius**3)
+        
+        do k=1,N(3)
+           cellZc = xB(5) + (k-0.5d0)*dz         ! comoving z-boundaries for cell
+           
+           do j=1,N(2)
+              cellYc = xB(3) + (j-0.5d0)*dy      ! comoving y-boundaries for cell
+              
+              do i=1,N(1)
+                 cellXc = xB(1) + (i-0.5d0)*dx   ! comoving x-boundaries for cell
+                 
+                 ! see if cell is within source region
+                 if ( (abs(cellXc-EtaCenter(1)) < EtaRadius*dx) .and. &
+                      (abs(cellYc-EtaCenter(2)) < EtaRadius*dy) .and. &
+                      (abs(cellZc-EtaCenter(3)) < EtaRadius*dz) ) then
+                    srcXr(i,j,k) = etaconstXr
+                    if (XrayOnly == 0)  srcUV(i,j,k) = etaconstUV
+                 endif
+                 
+              enddo
+           enddo
+        enddo
+
+     endif ! EtaRadius == 0
+
+  ! emissivity flux along x=0 wall (NGammaDot photons/s/cm^2)
+  else if (ProbType == 212) then
+
+     ! place ionization source along left wall (if on this subdomain)
+     if (xB(1) == 0.d0) then
+
+        ! compute eta factors for given ionization source, and put on wall
+        etaconstUV = NGammaDotUV*hnu0*specconstUV/dx/LenUnits
+        etaconstXr = NGammaDotXr*hnu0*specconstXr/dx/LenUnits
+        do k=1,N(3)
+           do j=1,N(2)
+              srcXr(1,j,k) = etaconstXr
+              if (XrayOnly == 0)  srcUV(1,j,k) = etaconstUV
+           enddo
+        enddo
+     endif
+     
+  ! Iliev et al., test #4 (multiple sources in a cosmological medium)
+  elseif (ProbType == 217) then
+
+     ! place X-ray sources based on grid indices 
+     etaconstXr = 1.d52*hnu0*specconstXr*4.d0*pi/dV
+     srcXr(69,87,88)   = 0.646477039572334*etaconstXr
+     srcXr(68,120,103) = 0.687331910809231*etaconstXr
+     srcXr(61,79,65)   = 0.720977691827869*etaconstXr
+     srcXr(78,98,119)  = 0.745010302555466*etaconstXr
+     srcXr(74,97,123)  = 0.783462353719616*etaconstXr
+     srcXr(100,45,60)  = 0.869979626338959*etaconstXr
+     srcXr(86,10,27)   = 0.915642027721405*etaconstXr
+     srcXr(31,77,48)   = 0.939674638449001*etaconstXr
+     srcXr(104,55,62)  = 1.21845279688911*etaconstXr
+     srcXr(41,73,47)   = 1.63902316962204*etaconstXr
+     srcXr(73,89,96)   = 1.99710825046320*etaconstXr
+     srcXr(65,110,91)  = 2.27348358883057*etaconstXr
+     srcXr(77,91,106)  = 2.38643629225025*etaconstXr
+     srcXr(113,61,64)  = 3.25881936866198*etaconstXr
+     srcXr(124,62,61)  = 5.81348456600542*etaconstXr
+     srcXr(81,97,114)  = 7.96921044127083*etaconstXr
+
+     ! place UV sources based on grid indices 
+     if (XrayOnly == 0) then
+        etaconstUV = 1.d52*hnu0*specconstUV*4.d0*pi/dV
+        srcUV(69,87,88)   = 0.646477039572334*etaconstUV
+        srcUV(68,120,103) = 0.687331910809231*etaconstUV
+        srcUV(61,79,65)   = 0.720977691827869*etaconstUV
+        srcUV(78,98,119)  = 0.745010302555466*etaconstUV
+        srcUV(74,97,123)  = 0.783462353719616*etaconstUV
+        srcUV(100,45,60)  = 0.869979626338959*etaconstUV
+        srcUV(86,10,27)   = 0.915642027721405*etaconstUV
+        srcUV(31,77,48)   = 0.939674638449001*etaconstUV
+        srcUV(104,55,62)  = 1.21845279688911*etaconstUV
+        srcUV(41,73,47)   = 1.63902316962204*etaconstUV
+        srcUV(73,89,96)   = 1.99710825046320*etaconstUV
+        srcUV(65,110,91)  = 2.27348358883057*etaconstUV
+        srcUV(77,91,106)  = 2.38643629225025*etaconstUV
+        srcUV(113,61,64)  = 3.25881936866198*etaconstUV
+        srcUV(124,62,61)  = 5.81348456600542*etaconstUV
+        srcUV(81,97,114)  = 7.96921044127083*etaconstUV
+     end if
+
+  ! point-source emissivity at center of every processor
+  elseif (ProbType == 214) then
+
+!!$     ! compute eta factors for given ionization source
+!!$     etaconstXr = hnu0*NGammaDotXr*specconstXr/dV
+!!$     etaconstUV = hnu0*NGammaDotUV*specconstUV/dV
+!!$        
+!!$     ! place ionization source in center of subdomain
+!!$     srcXr(int(N(1)/2),int(N(2)/2),int(N(3)/2)) = etaconstXr
+!!$     if (XrayOnly == 0) &
+!!$          srcUV(int(N(1)/2),int(N(2)/2),int(N(3)/2)) = etaconstUV
+
+
+
+     ! set radius and center for this processor, assuming a desire to have 
+     ! the source radius as 1/16 of the mesh in each direction
+     srcCenter(1) = 0.5d0*(xB(1) + xB(2))
+     srcCenter(2) = 0.5d0*(xB(3) + xB(4))
+     srcCenter(3) = 0.5d0*(xB(5) + xB(6))
+     srcRadius = real(int(N(1)/16))
+
+     ! compute eta factors for given ionization source
+     etaconstUV = hnu0*NGammaDotUV*specconstUV/dV/8.d0/(srcRadius**3)
+     etaconstXr = hnu0*NGammaDotXr*specconstXr/dV/8.d0/(srcRadius**3)
+     
+     do k=1,N(3)
+        cellZc = xB(5) + (k-0.5d0)*dz         ! comoving z-boundaries for cell
+        
+        do j=1,N(2)
+           cellYc = xB(3) + (j-0.5d0)*dy      ! comoving y-boundaries for cell
+           
+           do i=1,N(1)
+              cellXc = xB(1) + (i-0.5d0)*dx   ! comoving x-boundaries for cell
+              
+              ! see if cell is within source region
+              if ( (abs(cellXc-srcCenter(1)) < srcRadius*dx) .and. &
+                   (abs(cellYc-srcCenter(2)) < srcRadius*dy) .and. &
+                   (abs(cellZc-srcCenter(3)) < srcRadius*dz) ) then
+                 srcXr(i,j,k) = etaconstXr
+                 if (XrayOnly == 0)  srcUV(i,j,k) = etaconstUV
+              endif
+              
+           enddo
+        enddo
+     enddo
+     
+
+     
+  ! homogeneous emissivity field w/ strength hnu0*NGammaDot/dV
+  elseif (ProbType == 216) then
+
+     srcXr = hnu0*NGammaDotXr*specconstXr/dV
+     if (XrayOnly == 0)  srcUV = hnu0*NGammaDotUV*specconstUV/dV
+     
+  endif ! ProbType
+
+  return
+end subroutine DualFLD_RadiationSource
+!=======================================================================

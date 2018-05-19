@@ -1,0 +1,4 @@
+      subroutine acml_st1(x, n1, idir)
+      call exit
+      return
+      end

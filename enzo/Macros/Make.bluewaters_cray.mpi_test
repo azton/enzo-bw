@@ -1,0 +1,77 @@
+#
+# macros for Cray BlueWaters MPI
+#
+
+CPP      = /usr/bin/cpp
+CPP_FLAG = -traditional
+
+CRAY_HDF5_INSTALL = ${HDF5_DIR}
+CRAY_HDF5_INCLUDE = -I$(CRAY_HDF5_INSTALL)/include
+
+CRAY_HYPRE_INCLUDE = ${HYPRE_INC}
+
+ifeq ($(ENZO_INT),LARGE_INTS)
+  ifeq ($(ENZO_XPR),r8)
+    CRAY_FC_PREC := -s real64 -s integer64
+  else
+    CRAY_FC_PREC :=  -s real32 -s integer64
+  endif
+else
+  ifeq ($(ENZO_XPR),r8)
+    CRAY_FC_PREC := -s real64 -s integer32
+  else
+    CRAY_FC_PREC := -s real32 -s integer32
+  endif
+endif
+
+CRAY_FC_ARITH = 
+CRAY_FC_THREAD = -h omp
+CRAY_FC_NOTHREAD = -h noomp
+CRAY_FC_OPT = 
+CRAY_FC_SRC = -N 132
+CRAY_FC_DEBUG = -g
+
+CRAY_F90_SRC = 
+
+CRAY_CC_ARITH = 
+CRAY_CC_THREAD = -h omp
+CRAY_CC_NOTHREAD = -h noomp
+CRAY_CC_OPT = 
+CRAY_CC_DEBUG = -g
+
+CRAY_CXX_ARITH = 
+CRAY_CXX_THREAD = -h omp
+CRAY_CXX_NOTHREAD = -h noomp
+CRAY_CXX_OPT = 
+CRAY_CXX_DEBUG = -g
+
+## Fortran compiler
+FC           = ftn
+FC_DEF       = -DUSE_MPI -DNO_IO_LOG -DLINUX_CRAY_X86_64
+#FC_OPT       = $(CRAY_FC_OPT) $(CRAY_FC_THREAD) $(CRAY_FC_ARITH) $(CRAY_FC_SRC) $(CRAY_FC_PREC)
+FC_OPT       = $(CRAY_FC_OPT) $(CRAY_FC_NOTHREAD) $(CRAY_FC_ARITH) $(CRAY_FC_SRC) $(CRAY_FC_PREC)
+FREE90       = 
+
+## C Compiler
+CC           = cc
+CC_DEF       = -DLINUX_CRAY_X86_64 -DUSE_MPI -DNO_IO_LOG -D MEM_TRACE
+#CC_OPT       = $(CRAY_CC_OPT) $(CRAY_CC_THREAD) $(CRAY_CC_ARITH)
+CC_OPT       = $(CRAY_CC_OPT) $(CRAY_CC_NOTHREAD) $(CRAY_CC_ARITH)
+
+## C++ Compiler (qldbl128 required if using p16)
+CCxx	     = CC
+#CCxx_DEF     = -DLINUX_CRAY_X86_64 -DUSE_MPI -DNO_IO_LOG -DMEM_TRACE -DHYBRID
+#CCxx_OPT     = $(CRAY_CXX_OPT) $(CRAY_CXX_THREAD) $(CRAY_CXX_ARITH)   
+CCxx_DEF     = -DLINUX_CRAY_X86_64 -DUSE_MPI -DNO_IO_LOG -DMEM_TRACE -DMPICH_IGNORE_CXX_SEEK -DH5_USE_16_API
+CCxx_OPT     = $(CRAY_CXX_OPT) $(CRAY_CXX_NOTHREAD) $(CRAY_CXX_ARITH)   
+
+## Linker/loader
+LDR          = CC
+#LDR_OPT      = $(CRAY_CXX_OPT) $(CRAY_CXX_THREAD) $(CRAY_CXX_ARITH)
+LDR_OPT      = $(CRAY_CXX_OPT) $(CRAY_CXX_NOTHREAD) $(CRAY_CXX_ARITH)
+LIB          = ${HYPRE_LIB} \
+               -L${CRAY_HDF5_INSTALL}/lib -lhdf5 \
+               #-L/opt/ibmcmp/xlf/13.1/lib64 -lxl -lxlf90_r -lxlf90_t -lxlfmath -lxlopt -lxlfpad -lxlfpmt4 -lxlfpmt8
+
+OPTS         = -c -I${CRAY_HDF5_INSTALL}/include $(CRAY_HYPRE_INCLUDE)
+DEBUG        = 

@@ -1,0 +1,96 @@
+#
+# macros for Cray XT5
+#
+
+CPP          = /lib/cpp
+CPP_FLAG     = -traditional
+
+PGI_HDF5_INSTALL = /sw/xt/hypre/2.07b/cnl2.2_pgi11.4
+PGI_HDF5_INCLUDE = -I$(PGI_HDF5_INSTALL)/include
+
+PGI_HYPRE_INSTALL = /nics/b/home/darkness/Hypre/hypre-2.6.0b
+PGI_HYPRE_INCLUDE = -I$(PGI_HYPRE_INSTALL)/include
+
+PGI_SZLIB_INSTALL = /sw/xt/szip/2.1/sles10.1_pgi10.4.0
+PGI_SPRNG_INSTALL = /sw/xt/sprng/2.0b/cnl2.2_pgi10.4.0
+PGI_SPRNG_INCLUDE = -I$(PGI_SPRNG_INSTALL)/include
+
+AMD_ACML = /opt/acml/default/pgi64
+PGI_ZLIB = /usr/lib
+
+ifeq ($(CRAYPAT_ROOT),$(null))
+XT5_PAT =
+XT5_PAT_INCLUDE =
+XT5_PAT_CONF = -DNO_USE_PAT
+else
+XT5_PAT = $(CRAYPAT_ROOT)/lib/xt-cnl/lib_pat.a
+XT5_PAT_INCLUDE = -I$(CRAYPAT_ROOT)/include
+XT5_PAT_CONF = -DUSE_PAT
+endif
+
+ifeq ($(ENZO_INT),LARGE_INTS)
+  ifeq ($(ENZO_XPR),r8)
+    PGI_FC_PREC := -r8 -i8
+  else
+    PGI_FC_PREC := -r4 -i8
+  endif
+else
+  ifeq ($(ENZO_XPR),r8)
+    PGI_FC_PREC := -r8 -i4
+  else
+    PGI_FC_PREC := -r4 -i4
+  endif
+endif
+
+#Threading -mp=nonuma
+
+PGI_FC_ARITH = -Mdaz -Mflushz -Mnofprelaxed -Kieee
+PGI_FC_THREAD = -Mnoopenmp -Mnosgimp
+PGI_FC_OPT = -O1 -fastsse -Mnontemporal -Mextend -Mvect=altcode,assoc,prefetch
+PGI_FC_DEBUG = -g -traceback -Ktrap=fp -Minfo=loop,mp
+
+PGI_CC_ARITH = -Mdaz -Mflushz -Mnofprelaxed -Kieee
+PGI_CC_THREAD = -Mnosgimp
+PGI_CC_OPT = -O1 -Mnoautoinline -Mnontemporal -Mvect=altcode,assoc,prefetch
+PGI_CC_DEBUG = -g -traceback -Ktrap=fp -Minfo=loop,mp
+
+PGI_CXX_ARITH = -Mdaz -Mflushz -Mnofprelaxed -Kieee
+PGI_CXX_THREAD = -Mnoopenmp -Mnosgimp --no_exceptions
+PGI_CXX_OPT = -O1 -Mnoautoinline -Mnontemporal -Mvect=altcode,assoc,prefetch
+PGI_CXX_DEBUG = -g -traceback -Ktrap=fp -Minfo=loop,mp
+
+## Fortran compiler
+FC           = ftn
+FC_DEF       = -DXT3 -DUSE_MPI -DNO_IO_LOG
+FC_OPT       = $(PGI_FC_OPT) $(PGI_FC_THREAD) $(PGI_FC_ARITH) $(PGI_FC_PREC)
+
+## C Compiler
+CC           = cc
+CC_DEF       = -DXT3 -DMEM_TRACE -DUSE_MPI -DNO_IO_LOG -DSYSCALL
+CC_OPT       = $(PGI_CC_OPT) $(PGI_CC_THREAD) $(PGI_CC_ARITH) $(CC_DEF)
+
+## C++ Compiler
+CCxx         = CC -DMPICH_IGNORE_CXX_SEEK -DH5_USE_16_API $(XT5_PAT_CONF) -I.
+CCxx_DEF     = -DXT3 -DMEM_TRACE -DUSE_MPI -DNO_IO_LOG -DSYSCALL
+CCxx_OPT     = $(PGI_CXX_OPT) $(PGI_CXX_THREAD) $(PGI_CXX_ARITH) $(CCxx_DEF)
+
+## -Msafeptr UNSAFE
+## -Mprefetch=distance:8,nta
+
+## Linker/loader
+
+PGI_CXX_LINK = CC -pgf77libs -pgf90libs
+
+LDR          = CC -pgf77libs -pgf90libs
+LDR_OPT      = $(PGI_CXX_OPT) $(PGI_CXX_THREAD) $(PGI_CXX_ARITH) -Wl,-static,"-Map load_map"
+LIB          = \
+               -L$(PGI_HYPRE_INSTALL)/lib -lHYPRE \
+               -L$(PGI_HDF5_INSTALL)/lib -lhdf5 \
+               -L$(PGI_SZLIB_INSTALL)/lib -lsz -lz \
+               -lm
+
+INCLUDE      = $(PGI_HDF5_INCLUDE) $(PGI_HYPRE_INCLUDE) $(XT5_PAT_INCLUDE)
+
+OPTIONS      = 
+OPTS         = -c ${OPTIONS} ${INCLUDE}
+DEBUG        =

@@ -1,0 +1,114 @@
+#
+# macros for stella
+#
+
+CPP          = /usr/bin/cpp
+CPP_FLAG     = -P -traditional
+
+DEBUG = NO
+#DEBUG = YES
+
+LOCAL_MPI_INSTALL    = /usr/local/mpich-3.1.1/intel
+LOCAL_FC_INSTALL     = /opt/intel/composerxe/lib/intel64
+LOCAL_HDF5_INSTALL   = /usr/local/hdf5-1.8.8
+#LOCAL_SZIP_INSTALL   = /usr/local/visit-2.7.3/2.7.3/linux-x86_64
+ifeq ($(DEBUG),YES)
+  LOCAL_HYPRE_INSTALL  = /usr/local/hypre-2.9.1a/intel_debug
+else
+  LOCAL_HYPRE_INSTALL  = /usr/local/hypre-2.9.1a/intel
+endif
+LOCAL_LAPACK_INSTALL = /usr/lib/atlas-base
+
+LOCAL_HDF5_INCLUDE = -I$(LOCAL_HDF5_INSTALL)/include
+LOCAL_HYPRE_INCLUDE = -I$(LOCAL_HYPRE_INSTALL)/include
+LOCAL_SPRNG_INSTALL = /none
+LOCAL_SPRNG_INCLUDE = -I$(LOCAL_SPRNG_INSTALL)/include
+
+LOCAL_ACML = /none
+LOCAL_ZLIB = /usr/local/lib
+
+ifeq ($(CRAYPAT_ROOT),$(null))
+XT5_PAT =
+XT5_PAT_INCLUDE =
+XT5_PAT_CONF = -DNO_USE_PAT
+else
+XT5_PAT = $(CRAYPAT_ROOT)/lib/xt-cnl/lib_pat.a
+XT5_PAT_INCLUDE = -I$(CRAYPAT_ROOT)/include
+XT5_PAT_CONF = -DUSE_PAT
+endif
+
+ifeq ($(ENZO_INT),LARGE_INTS)
+  ifeq ($(ENZO_XPR),r8)
+    INTEL_FC_PREC := -real-size 64 -integer-size 64
+  else
+    INTEL_FC_PREC := -real-size 32 -integer-size 64
+  endif
+else
+  ifeq ($(ENZO_XPR),r8)
+    INTEL_FC_PREC := -real-size 64 -integer-size 32
+  else
+    INTEL_FC_PREC := -real-size 32 -integer-size 32
+  endif
+endif
+
+INTEL_FC_ARITH = 
+INTEL_FC_THREAD =
+INTEL_FC_OPT = -O2 -static-intel
+INTEL_FC_DEBUG = -O0 -g -march=native
+
+INTEL_CC_ARITH = 
+INTEL_CC_THREAD =
+INTEL_CC_OPT = -O2 -I/usr/lib -static-intel -static-libgcc
+INTEL_CC_DEBUG = -O0 -g -march=native
+
+INTEL_CXX_ARITH = 
+INTEL_CXX_THREAD =
+INTEL_CXX_OPT = -O2 -I/usr/lib -static-intel -static-libgcc
+INTEL_CXX_DEBUG = -O0 -g -traceback -march=native
+
+
+## Fortran compiler
+FC      = $(LOCAL_MPI_INSTALL)/bin/mpif90
+DEFINES = -DLINUX_INTEL_X86_64 -DUSE_MPI -DNO_IO_LOG
+ifeq ($(DEBUG),YES)
+  FC_OPT  = $(INTEL_FC_DEBUG) $(INTEL_FC_THREAD) $(INTEL_FC_ARITH) $(INTEL_FC_PREC)
+else
+  FC_OPT  = $(INTEL_FC_OPT) $(INTEL_FC_THREAD) $(INTEL_FC_ARITH) $(INTEL_FC_PREC)
+endif
+
+## C Compiler
+CC      = $(LOCAL_MPI_INSTALL)/bin/mpicc
+CC_DEF  = -DLINUX_INTEL_X86_64 -DUSE_MPI -DNO_IO_LOG -DSYSCALL
+ifeq ($(DEBUG),YES)
+  CC_OPT  = $(INTEL_CC_DEBUG) $(INTEL_CC_THREAD) $(INTEL_CC_ARITH) $(CC_DEF)
+else
+  CC_OPT  = $(INTEL_CC_OPT) $(INTEL_CC_THREAD) $(INTEL_CC_ARITH) $(CC_DEF)
+endif
+
+## C++ Compiler
+CCxx     = $(LOCAL_MPI_INSTALL)/bin/mpicxx
+CCxx_DEF = -DLINUX_INTEL_X86_64 -DUSE_MPI -DNO_IO_LOG -DSYSCALL -DMPICH_IGNORE_CXX_SEEK -DH5_USE_16_API
+ifeq ($(DEBUG),YES)
+  CCxx_OPT = $(INTEL_CXX_DEBUG) $(INTEL_CXX_THREAD) $(INTEL_CXX_ARITH) $(CCxx_DEF)
+else
+  CCxx_OPT = $(INTEL_CXX_OPT) $(INTEL_CXX_THREAD) $(INTEL_CXX_ARITH) $(CCxx_DEF)
+endif
+
+## Linker/loader
+INTEL_F90_LINK = -L$(LOCAL_FC_INSTALL) -lifcore -lirc -lifport
+
+LDR     = $(CCxx)
+LDR_OPT = $(INTEL_CXX_OPT) $(INTEL_CXX_THREAD) $(INTEL_CXX_ARITH)
+LIB     = \
+          $(INTEL_F90_LINK) \
+	  -L$(LOCAL_HYPRE_INSTALL)/lib -lHYPRE \
+          -L$(LOCAL_HDF5_INSTALL)/lib -lhdf5 \
+          #-L$(LOCAL_SZIP_INSTALL)/lib -lsz \
+          -lm -lz
+
+INCLUDE = $(LOCAL_HDF5_INCLUDE) $(LOCAL_HYPRE_INCLUDE) $(XT5_PAT_INCLUDE)
+
+OPTIONS = 
+OPTS    = -c ${OPTIONS} ${INCLUDE}
+DEBUG   =
+

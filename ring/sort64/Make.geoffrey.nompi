@@ -1,0 +1,75 @@
+#
+# macros for geoffrey's laptop
+#
+
+HDF5_INSTALL = /Users/gso/Documents/hdf5-1.8.6
+HDF5_INCLUDE = $(HDF5_INSTALL)/include
+GNU_MPI_INSTALL = /Users/gso/Documents/openmpi-1.4.3/gfortran
+GNU_MPI_INCLUDE = $(GNU_MPI_INSTALL)/include
+
+
+CPP          = /usr/bin/cpp
+DEFINES      = 
+OPTIONS      =
+
+GNU_FC_ARITH =
+GNU_FC_THREAD =
+GNU_FC_OPT = -O2
+GNU_FC_DEBUG = -g -O0
+
+GNU_CC_ARITH =
+GNU_CC_THREAD =
+GNU_CC_OPT = -O2
+GNU_CC_DEBUG = -g -O0
+
+GNU_CXX_ARITH =
+GNU_CXX_THREAD =
+GNU_CXX_OPT = -O2
+GNU_CXX_DEBUG = -g -O0
+
+
+
+## Fortran compiler
+FC           = mpif90
+DEFINES      = -DLINUX_INTEL_X86_64 -DNO_IO_LOG
+FC_OPT       = $(GNU_FC_DEBUG) $(GNU_FC_THREAD) $(GNU_FC_ARITH) $(GNU_FC_PREC)
+
+## C Compiler
+CC           = mpicc
+CC_DEF       = -I/usr/local/lib -DLINUX_INTEL_X86_64 -DNO_IO_LOG -DSYSCALL
+CC_OPT       = $(GNU_CC_DEBUG) $(GNU_CC_THREAD) $(GNU_CC_ARITH) $(CC_DEF)
+
+## C++ Compiler
+CCxx         = mpic++ -DH5_USE_16_API
+CCxx_DEF     = -I/usr/local/lib -DLINUX_INTEL_X86_64 -DNO_IO_LOG -DSYSCALL
+CCxx_OPT     = $(GNU_CXX_DEBUG) $(GNU_CXX_THREAD) $(GNU_CXX_ARITH) $(CCxx_DEF)
+
+
+
+
+
+SZLIB = /Users/gso/Documents/szip-2.1/gfortran
+ZLIB  = 
+ACML  = 
+
+## Linker/loader
+# -pgf90libs
+GNU_LIB = /usr/local/gfortran/lib
+GNU_CXX_LINK = -L$(GNU_LIB) -lgfortran
+
+LDR          = $(CCxx)
+LDR_OPT      = $(GNU_CXX_OPT) $(GNU_CXX_THREAD) $(GNU_CXX_ARITH)
+LIB          =\
+              $(GNU_CXX_LINK) \
+              -L$(HDF5_INSTALL)/lib -lhdf5 \
+              -L$(SZLIB)/lib -lsz -lz \
+              -L$(GNU_MPI_INSTALL)/lib -lmpi \
+              -lm
+
+#               -L/opt/pgi/$(PGI_VERS_STR)/linux86-64/$(PGI_VERS_STR)/lib \
+#               -lpgf90 -lpgf90_rpm1 -lpgf902 -lpgf90rtl -lpgftnrtl
+
+INCLUDE      = -I$(HDF5_INSTALL)/include -I$(GNU_MPI_INSTALL)/include
+
+OPTS         = -c ${OPTIONS} ${INCLUDE}
+DEBUG        =

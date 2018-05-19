@@ -1,0 +1,649 @@
+#include "fortran.def"
+#include "error.def"
+c=======================================================================
+c//////////////////////  SUBROUTINE ZEUS_SOURCE  \\\\\\\\\\\\\\\\\\\\\\\
+c
+      subroutine zeus_source(d, e, u, v, w, p, in, jn, kn, rank, 
+     &                          igamfield,
+     &                       is, ie, js, je, ks, ke, C1, C2, ipresfree,
+     &                       gamma, dt, pmin, dx, dy, dz,
+     &                       gravity, gr_xacc, gr_yacc, gr_zacc, 
+     &                       bottom, minsupecoef)
+c
+c  SOURCE TERMS FOR ZEUS HYDRO (CARTESIAN ONLY)
+c
+c  written by: Greg Bryan (implemented from Stone & Norman, ApJS 80, 753)
+c  date:       February, 1997
+c  modified1: 
+c
+c  PURPOSE:
+c     Adds the source substeps
+c
+c  EXTERNALS:
+c
+c  INPUTS:
+c     d       - density field (includes boundary zones)
+c     dx,y,z  - zone width arrays for each dimension
+c     e       - total specific energy field
+c     ge      - gas energy (used when idual = 1)
+c     gr_x,y,zacc - gravitational acceleration fields
+c     gravity - flag indicating whether or not to use gravity field (1 = yes)
+c     i,j,kn  - dimensions of field arrays
+c     igamfield - indicates if gamma should be a field
+c     ipresfree - pressure-free flag (0 = off, 1 = on, i.e. p=0)
+c     rank    - dimension of problem (not currently used)
+c     u       - x-velocity field
+c     v       - y-velocity field
+c     w       - z-velocity field
+c     C1,C2   - Linear and quadratic artifificla viscosity parameters
+c     bottom  - true (1) if this is the lowest level
+c     minsupecoef - coefficient for minimum pressure support
+c
+c  LOCALS:
+c
+c-----------------------------------------------------------------------
+      implicit NONE
+c-----------------------------------------------------------------------
+c
+c     Arguments
+c
+      integer in, jn, kn, rank, is, ie, js, je, ks, ke, gravity, 
+     &        bottom, igamfield, ipresfree, nstep
+      real    d(in,jn,kn), e(in,jn,kn), u(in,jn,kn), v(in,jn,kn),
+     &        w(in,jn,kn), p(in,jn,kn), dx(in), dy(jn), dz(kn),
+     &        gr_xacc(in,jn,kn), gr_yacc(in,jn,kn), gr_zacc(in,jn,kn)
+      real    gamma(in,jn,kn), dt, pmin, C1, C2, C3, minsupecoef
+c
+c     Parameters
+c
+      integer ijk
+      parameter (ijk = MAX_ANY_SINGLE_DIRECTION)
+c
+c     Locals
+c
+      integer i, j, k, jsm1, ksm1, jep1, kep1, jsm2, ksm2, jep2, kep2, n
+      real    alpha, q(ijk), div(ijk), deltav, deltavmax, e1, gamma1
+      real    dt1, mom(ijk), momf(ijk), dt2, pfparam, u1, C1a
+      integer nmax
+      parameter (pfparam = 0.001, nmax=200)
+c
+#define NO_NEW_VISCOSITY
+c
+c\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\////////////////////////////////
+c=======================================================================
+c
+c     Compute varients on start indexes
+c
+      jsm1 = max(js-1, 1)
+      ksm1 = max(ks-1, 1)
+      jep1 = min(je+1, jn)
+      kep1 = min(ke+1, kn)
+      jsm2 = max(js-2, 1)
+      ksm2 = max(ks-2, 1)
+      jep2 = min(je+2, jn)
+      kep2 = min(ke+2, kn)
+c
+      gamma1 = gamma(1,1,1)  ! if gamma is a scalar
+c
+c     Compute the pressure
+c
+      do k = 1, kn
+         do j = 1, jn
+            if (ipresfree .eq. 1) then
+c
+c              Pressurefree - set pressure field to zero
+c
+               do i = 1, in
+                  p(i,j,k) = 0
+               enddo
+            else
+c
+               if (igamfield .eq. 1) then
+c
+c                 Compute pressure with variable gamma
+c
+                  do i = 1, in
+                     e1 = e(i,j,k)
+                     e1 = max(e(i,j,k), minsupecoef*d(i,j,k))
+                     p(i,j,k) = max((gamma(i,j,k)-1.0)*
+     &                              d(i,j,k)*e1, pmin)
+                  enddo
+               else
+c
+c                 Compute pressure with constant gamma
+c
+                  do i = 1, in
+                     e1 = e(i,j,k)
+                     e1 = max(e(i,j,k), minsupecoef*d(i,j,k))
+                     p(i,j,k) = max((gamma1-1.0)*d(i,j,k)*e1, pmin)
+                     if (e(i,j,k) .le. 0.0 .or. d(i,j,k) .le. 0.0) then
+                        write(6,*) 'zeus_source1:',
+     &                             e(i,j,k),d(i,j,k),i,j,k
+                        ERROR_MESSAGE
+                     endif
+                  enddo
+               endif
+c
+            endif
+c
+c        Next j,k
+c
+         enddo
+      enddo
+c
+#define NO_OVERCOOLING_FIXUP
+#ifdef OVERCOOLING_FIXUP
+      if (gravity .eq. 1 .and. bottom .eq. 1) then
+         do k = ks, ke
+            do j = js, je
+               do i = is, ie
+                  if (e(i,j,k)/d(i,j,k) .lt. 
+     &               min(e(i-1,j,k)/d(i-1,j,k), e(i+1,j,k)/d(i+1,j,k)))
+     &               p(i,j,k) = 0.5*(p(i-1,j,k) + p(i+1,j,k))
+                  if (rank .gt. 1) then
+                    if (e(i,j,k)/d(i,j,k) .lt. 
+     &               min(e(i,j-1,k)/d(i,j-1,k), e(i,j+1,k)/d(i,j+1,k)))
+     &               p(i,j,k) = 0.5*(p(i,j-1,k) + p(i,j+1,k))
+                  endif
+                  if (rank .gt. 2) then
+                    if (e(i,j,k)/d(i,j,k) .lt. 
+     &               min(e(i,j,k-1)/d(i,j,k-1), e(i,j,k+1)/d(i,j,k+1)))
+     &               p(i,j,k) = 0.5*(p(i,j,k-1) + p(i,j,k+1))
+                  endif
+               enddo
+            enddo
+         enddo
+      endif
+#endif /* OVERCOOLING_FIXUP */
+c
+c     1) Substep 1 -- pressure and gravity terms
+c
+      do k = ksm2, kn
+         do j = jsm2, jn
+c
+c           Update velocities with compression term
+c              (limit increase to preventy pressure driven instability)
+c
+            do i = is-2, ie+3
+               deltav =         dt*(p(i-1,j,k)-p(i,j,k))/
+     &                  (dx(i)*0.5*(d(i-1,j,k)+d(i,j,k)))
+c               if (abs(deltav) .gt. vlim*dx(i)/dt) write(6,*)
+c     &            'z_lim_i',deltav,dx(i),dt,p(i-1,j,k),p(i,j,k),
+c     &            i,j,k,ie,je,ke,d(i-1,j,k),d(i,j,k),e(i-1,j,k),
+c     &            e(i,j,k)
+c               deltav = sign(min(abs(deltav),vlim*dx(i)/dt), deltav)
+               u(i,j,k) = u(i,j,k) + deltav
+            enddo
+            if (rank .gt. 1) then
+              do i = is-2, ie+3
+                 deltav =         dt*(p(i,j-1,k)-p(i,j,k))/
+     &                    (dy(j)*0.5*(d(i,j-1,k)+d(i,j,k)))
+c               if (abs(deltav) .gt. vlim*dy(j)/dt) write(6,*)
+c     &            'z_lim_j',deltav,dy(j),dt,p(i,j-1,k),p(i,j,k),
+c     &            i,j,k,ie,je,ke,d(i-1,j,k),d(i,j,k),e(i,j-1,k),
+c     &            e(i,j,k)
+c                 deltav = sign(min(abs(deltav),vlim*dy(j)/dt), deltav)
+                 v(i,j,k) = v(i,j,k) + deltav
+              enddo
+            endif
+            if (rank .gt. 2) then
+              do i = is-2, ie+3
+                 deltav =         dt*(p(i,j,k-1)-p(i,j,k))/
+     &                    (dz(k)*0.5*(d(i,j,k-1)+d(i,j,k)))
+c               if (abs(deltav) .gt. vlim*dz(k)/dt) write(6,*)
+c     &            'z_lim_k',deltav,dz(k),dt,p(i,j,k-1),p(i,j,k),
+c     &            i,j,k,ie,je,ke,d(i,j,k-1),d(i,j,k),e(i,j,k-1),
+c     &            e(i,j,k)
+c                 deltav = sign(min(abs(deltav),vlim*dz(k)/dt), deltav)
+                 w(i,j,k) = w(i,j,k) + deltav
+              enddo
+            endif
+c
+c           Update velocities with acceleration
+c
+            if (gravity .eq. 1) then
+               do i = is-2, ie+3
+                  u(i,j,k) = u(i,j,k) + dt*gr_xacc(i,j,k)
+               enddo
+               if (rank .gt. 1) then
+                  do i = is-2, ie+3
+                     v(i,j,k) = v(i,j,k) + dt*gr_yacc(i,j,k)
+                  enddo
+               endif
+               if (rank .gt. 2) then
+                  do i = is-2, ie+3
+                     w(i,j,k) = w(i,j,k) + dt*gr_zacc(i,j,k)
+                  enddo
+               endif
+            endif
+c
+         enddo
+      enddo
+c
+c     2) Substep 2 -- artificial viscosity
+c
+      nstep = 5
+      dt1 = dt/real(nstep)
+      C3 = -1.0
+      C1a = C1
+      if (bottom .eq. 1) C1a = C1*5.0
+
+#ifdef UNUSED
+      if (bottom .eq. 1) then
+         nstep = 10
+         j = jn/2
+         k = kn/2
+         do i = is-3, ie+3
+            write(16,20) i,d(i,j,k),u(i,j,k),v(i,j,k),w(i,j,k)
+         enddo
+ 20      format(i5,1x,1p,4(e10.3,1x))
+      endif
+#endif /* UNUSED */
+c
+      do n = 1, nstep
+      do k = ksm2, kn
+         do j = jsm2, jn
+c
+c           a) Quadratic viscosity
+c
+            do i = is-2, ie+2
+               if ((u(i+1,j,k)-u(i,j,k)) .lt. 0.0) then
+                  q(i) = C2*d(i,j,k)*(u(i+1,j,k)-u(i,j,k))**2
+               else
+                  q(i) = 0.0
+               endif
+            enddo
+c
+c           b) linear viscosity
+c
+            if (C1 .ne. 0.0) then
+               if (igamfield .eq. 1) then
+                  do i = is-2, ie+2
+                     q(i) = q(i) + C1*d(i,j,k)*(u(i+1,j,k)-u(i,j,k))*
+     &                          sqrt(gamma(i,j,k)*p(i,j,k)/d(i,j,k))
+                  enddo
+               else
+                  do i = is-2, ie+2
+                     q(i) = q(i) + C1*d(i,j,k)*(u(i+1,j,k)-u(i,j,k))*
+     &                          sqrt(gamma1*p(i,j,k)/d(i,j,k))
+c     &                          0.5*(u(i+1,j,k)+u(i,j,k))
+                  enddo
+               endif
+            endif
+c
+            q(is-3) = q(is-2)
+            q(ie+3) = q(ie+2)
+
+#ifdef NEW_VISCOSITY            
+            if (bottom .eq. 1) then
+               u(is-3,j,k) = 2.0*u(is-2,j,k) - u(is-1,j,k)
+               do i = is-3, ie+2
+                  q(i) = C3*d(i,j,k)*(u(i+1,j,k)-u(i,j,k))*dx(i)/dt
+               enddo
+               u1 = 2.0*u(ie+3,j,k) - u(ie+2,j,k)
+               q(ie+3) = C3*d(ie+3,j,k)*(u1-u(ie+3,j,k))*dx(ie)/dt
+            endif
+#endif
+c
+c           update velocity1 and energy
+c
+            do i = is-2, ie+2
+               e(i,j,k) = e(i,j,k) + dt1*q(i)/d(i,j,k)*
+     &                               (u(i,j,k)-u(i+1,j,k))/dx(i)
+            enddo
+c
+            do i = is-2, ie+3
+               u(i,j,k) = u(i,j,k) + dt1*(q(i-1)-q(i))/
+     &                               (dx(i)*0.5*(d(i,j,k)+d(i-1,j,k)))
+            enddo
+c
+         enddo
+      enddo
+c
+c           update velocity2 and energy
+c
+      if (rank .gt. 1) then
+         do k = ksm2, kn
+            do i = is-2, in
+c
+               do j = js-2, je+2
+                  if ((v(i,j+1,k)-v(i,j,k)) .lt. 0.0) then
+                     q(j) = C2*d(i,j,k)*(v(i,j+1,k)-v(i,j,k))**2
+                  else
+                     q(j) = 0.0
+                  endif
+               enddo
+c
+               if (C1 .ne. 0.0) then
+                  if (igamfield .eq. 1) then
+                     do j = js-2, je+2
+                        q(j) = q(j) + C1*d(i,j,k)*(v(i,j+1,k)-v(i,j,k))*
+     &                             sqrt(gamma(i,j,k)*p(i,j,k)/d(i,j,k))
+                     enddo
+                  else
+                     do j = js-2, je+2
+                        q(j) = q(j) + C1*d(i,j,k)*(v(i,j+1,k)-v(i,j,k))*
+     &                             sqrt(gamma1*p(i,j,k)/d(i,j,k))
+c     &                          0.5*(v(i,j+1,k)+v(i,j,k))
+                     enddo
+                  endif
+               endif
+c
+               q(js-3) = q(js-2)
+               q(je+3) = q(je+2)
+c
+#ifdef NEW_VISCOSITY            
+               if (bottom .eq. 1) then 
+                  v(i,js-3,k) = 2.0*v(i,js-2,k) - v(i,js-1,k)
+                  do j = js-3, je+2
+                     q(j) = C3*d(i,j,k)*(v(i,j+1,k)-v(i,j,k))*dy(j)/dt
+                  enddo
+                  u1 = 2.0*v(i,je+3,k) - v(i,je+2,k)
+                  q(je+3) = C3*d(i,je+3,k)*(u1-v(i,je+3,k))*dy(je)/dt
+               endif
+#endif
+c
+               do j = js-2, je+2
+                  e(i,j,k) = e(i,j,k) + dt1*q(j)/d(i,j,k)*
+     &                               (v(i,j,k)-v(i,j+1,k))/dy(j)
+               enddo
+c
+               do j = js-2, je+3
+                  v(i,j,k) = v(i,j,k) + dt1*(q(j-1)-q(j))/
+     &                               (dy(j)*0.5*(d(i,j,k)+d(i,j-1,k)))
+               enddo
+            enddo
+         enddo
+      endif
+c
+c           update velocity3 and energy
+c
+      if (rank .gt. 2) then
+         do j = jsm2, jn
+            do i = is-2, in
+c
+               do k = ks-2, ke+2
+                  if ((w(i,j,k+1)-w(i,j,k)) .lt. 0.0) then
+                     q(k) = C2*d(i,j,k)*(w(i,j,k+1)-w(i,j,k))**2
+                  else
+                     q(k) = 0.0
+                  endif
+               enddo
+c
+               if (C1 .ne. 0.0) then
+                  if (igamfield .eq. 1) then
+                     do k = ks-2, ke+2
+                        q(k) = q(k) + C1*d(i,j,k)*(w(i,j,k+1)-w(i,j,k))*
+     &                             sqrt(gamma(i,j,k)*p(i,j,k)/d(i,j,k))
+                     enddo
+                  else
+                     do k = ks-2, ke+2
+                        q(k) = q(k) + C1*d(i,j,k)*(w(i,j,k+1)-w(i,j,k))*
+     &                             sqrt(gamma1*p(i,j,k)/d(i,j,k))
+c     &                          0.5*(w(i,j,k+1)+w(i,j,k))
+                     enddo
+                  endif
+               endif
+c
+               q(ks-3) = q(ks-2)
+               q(ke+3) = q(ke+2)
+c
+#ifdef NEW_VISCOSITY            
+               if (bottom .eq. 1) then
+                  w(i,j,ks-3) = 2.0*w(i,j,ks-2) - w(i,j,ks-1)
+                  do k = ks-3, ke+2
+                     q(k) = C3*d(i,j,k)*(w(i,j,k+1)-w(i,j,k))*dz(k)/dt
+                  enddo
+                  u1 = 2.0*w(i,j,ke+3) - w(i,j,ke+2)
+                  q(ke+3) = C3*d(i,j,ke+3)*(u1-w(i,j,ke+3))*dz(ke)/dt
+               endif
+#endif
+c
+               do k = ks-2, ke+2
+                  e(i,j,k) = e(i,j,k) + dt1*q(k)/d(i,j,k)*
+     &                               (w(i,j,k)-w(i,j,k+1))/dz(k)
+               enddo
+c
+               do k = ks-2, ke+3
+                  w(i,j,k) = w(i,j,k) + dt1*(q(k-1)-q(k))/
+     &                               (dz(k)*0.5*(d(i,j,k)+d(i,j,k-1)))
+               enddo
+c
+            enddo
+         enddo
+      endif
+      enddo
+c
+#ifdef UNUSED
+      if (bottom .eq. 1) then
+         j = jn/2
+         k = kn/2
+         do i = is-3, ie+3
+            write(16,20) i,u(i,j,k),v(i,j,k),w(i,j,k)
+         enddo
+      endif
+#endif /* UNUSED */
+c
+#define NO_MOMENTUM_DIFFUSION
+#ifdef MOMENTUM_DIFFUSION
+c
+c     2a) Substep 2a -- momentum diffusion
+c
+      do k = ksm2, kn
+         do j = jsm2, jn
+            dt1 = dt
+c
+c           convert velocity to momentum
+c
+            do i = is-2, ie+3
+               mom(i) = u(i,j,k)*0.5*(d(i-1,j,k)+d(i,j,k))
+            enddo
+c
+            do n=1, nmax
+               do i = is-2, ie+2
+                  momf(i) = max(mom(i)-mom(i+1),0.0) * pfparam / dt
+               enddo
+c
+               dt2 = dt1
+               do i = is-1, ie+2
+                  dt2 = min(dt2, 0.1*abs(mom(i))/
+     &                      (abs(momf(i-1)-momf(i))+tiny))
+               enddo
+c
+               do i = is-1, ie+2
+                  mom(i) = mom(i) + dt2*(momf(i-1)-momf(i))
+               enddo
+c
+               dt1 = dt1 - dt2
+               if (dt1/dt .lt. 1.0e-5) goto 200
+            enddo
+            write(6,*) 'momentum flux iteration count exceeded 1'
+            write(6,*) dt, dt1, dt2
+            do i = is-1, ie+2
+               write(15,20) i, d(i,j,k), u(i,j,k), mom(i), momf(i)
+            enddo
+ 20         format(i5,1x,1p,4(e12.4,1x))
+            ERROR_MESSAGE
+ 200        continue
+c
+c           Convert momentum back to velocity
+c
+            do i = is-1, ie+2
+               u(i,j,k) = mom(i)/(0.5*d(i-1,j,k)+d(i,j,k))
+            enddo
+c
+         enddo
+      enddo
+c
+c
+c
+      if (rank .gt. 1) then
+         do k = ksm2, kn
+            do i = is-2, in
+c
+               dt1 = dt
+               do j = js-2, je+3
+                  mom(j) = v(i,j,k)*0.5*(d(i,j-1,k)+d(i,j,k))
+               enddo
+c
+               do n=1, nmax
+                  do j = js-2, je+2
+                     momf(j) = max(mom(j)-mom(j+1),0.0) * pfparam / dt
+                  enddo
+c
+                  dt2 = dt1
+                  do j = js-1, je+2
+                     dt2 = min(dt2, 0.1*abs(mom(j))/
+     &                         (abs(momf(j-1)-momf(j))+tiny))
+                  enddo
+c
+                  do j = js-1, je+2
+                     mom(j) = mom(j) + dt2*(momf(j-1)-momf(j))
+                  enddo
+c
+                  dt1 = dt1 - dt2
+                  if (dt1/dt .lt. 1.0e-5) goto 300
+               enddo
+               write(6,*) 'momentum flux iteration count exceeded 2'
+               write(6,*) dt, dt1, dt2
+               do j = js-1, je+2
+                  write(15,20) j, d(i,j,k), u(i,j,k), mom(j), momf(j)
+               enddo
+               ERROR_MESSAGE
+ 300           continue
+c
+               do j = js-1, je+2
+                  v(i,j,k) = mom(j)/(0.5*d(i,j-1,k)+d(i,j,k))
+               enddo
+c     
+            enddo
+         enddo
+      endif
+c
+c
+c
+      if (rank .gt. 2) then
+         do j = jsm2, jn
+            do i = is-2, in
+c
+               dt1 = dt
+               do k = ks-2, ke+3
+                  mom(k) = v(i,j,k)*0.5*(d(i,j,k-1)+d(i,j,k))
+               enddo
+c
+               do n=1, nmax
+                  do k = ks-2, ke+2
+                     momf(k) = max(mom(k)-mom(k+1),0.0) * pfparam / dt
+                  enddo
+c
+                  dt2 = dt1
+                  do k = ks-1, ke+2
+                     dt2 = min(dt2, 0.1*abs(mom(k))/
+     &                         (abs(momf(k-1)-momf(k))+tiny))
+                  enddo
+c
+                  do k = ks-1, ke+2
+                     mom(k) = mom(k) + dt2*(momf(k-1)-momf(k))
+                  enddo
+c
+                  dt1 = dt1 - dt2
+                  if (dt1/dt .lt. 1.0e-5) goto 400
+               enddo
+               write(6,*) 'momentum flux iteration count exceeded 3'
+               write(6,*) dt, dt1, dt2
+               do k = ks-1, ke+2
+                  write(15,20) k, d(i,j,k), u(i,j,k), mom(k), momf(k)
+               enddo
+               ERROR_MESSAGE
+ 400           continue
+c
+               do k = ks-1, ke+2
+                  v(i,j,k) = mom(k)/(0.5*d(i,j,k-1)+d(i,j,k))
+               enddo
+c     
+            enddo
+         enddo
+      endif
+c
+#endif /* MOMENTUM_DIFFUSION */
+c
+c     3) Substep 3 -- compression term
+c
+      do k = ksm2, kep1
+         do j = jsm2, jep1
+c
+c           Compute the divergence (should use old u,v,w?)
+c
+            do i = is-2, ie+1
+               div(i) = (u(i+1,j,k) - u(i,j,k))/dx(i)
+            enddo
+c
+            if (rank .gt. 1) then
+               do i = is-2, ie+1
+                  div(i) = div(i) + (v(i,j+1,k) - v(i,j,k))/dy(j)
+               enddo
+            endif
+c
+            if (rank .gt. 2) then
+               do i = is-2, ie+1
+                  div(i) = div(i) + (w(i,j,k+1) - w(i,j,k))/dz(k)
+               enddo
+            endif
+c
+c           Update energy 
+c
+            do i = is-2, ie+1
+               if (igamfield .eq. 1) then
+                  alpha = 0.5*dt*(gamma(i,j,k) - 1.0)*div(i)
+               else
+                  alpha = 0.5*dt*(gamma1 - 1.0)*div(i)
+               endif
+               e(i,j,k) = e(i,j,k) * (1.0 - alpha)/(1.0 + alpha)
+c               if (d(i,j,k) .gt. 1000) write(20,111) i,j,k,d(i,j,k),
+c     &                 u(i,j,k),v(i,j,k),w(i,j,k),dt
+c 111           format(3i4, 1p, 5(1x,e11.3))
+               if (e(i,j,k) .le. 0.0 .or. d(i,j,k) .le. 0.0) then
+                  write(6,*) 'zeus_div',e(i,j,k),alpha
+                  write(6,*) div(i),i,j,k
+                  write(6,*) d(i,j,k),p(i,j,k),dt,dx(i)
+                  write(6,*) p(i+1,j,k),p(i,j+1,k),p(i,j,k+1)
+                  write(6,*) p(i-1,j,k),p(i,j-1,k),p(i,j,k-1)
+                  write(6,*) d(i-1,j,k),d(i,j-1,k),d(i,j,k-1)
+                  write(6,*) u(i-1,j,k),u(i,j,k),u(i+1,j,k)
+                  write(6,*) v(i,j-1,k),v(i,j,k),v(i,j+1,k)
+                  write(6,*) w(i,j,k-1),w(i,j,k),w(i,j,k+1)
+                  write(6,*) gr_xacc(i-1,j,k),gr_xacc(i  ,j,k),
+     &                                        gr_xacc(i+1,j,k)
+                  write(6,*) gr_yacc(i,j-1,k),gr_yacc(i,j  ,k),
+     &                                        gr_yacc(i,j+1,k)
+                  write(6,*) gr_zacc(i,j,k-1),gr_zacc(i,j,k  ),
+     &                                        gr_zacc(i,j,k+1)
+                  do n=is,ie
+                     write(6,*) d(n,j,k),e(n,j,k),u(n,j,k),
+     &                          v(n,j,k),w(n,j,k)
+                  enddo
+                  ERROR_MESSAGE
+               endif
+            enddo
+c
+         enddo
+      enddo
+c
+c     Compute the pressure
+c
+#ifdef UNUSED
+      do k = ksm2, kep2
+         do j = jsm2, jep2
+            do i = is-2, ie+2
+               p(i,j,k) = max((gamma-1.0)*d(i,j,k)*e(i,j,k), pmin)
+               if (e(i,j,k) .le. 0.0 .or. d(i,j,k) .le. 0.0) then
+                  write(6,*) 'zeus_source2:',e(i,j,j),d(i,j,k),i,j,k
+                  ERROR_MESSAGE
+               endif
+            enddo
+         enddo
+      enddo
+#endif /* UNUSED */
+c
+      return
+      end

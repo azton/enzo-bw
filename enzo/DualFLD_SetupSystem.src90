@@ -1,0 +1,755 @@
+!=======================================================================
+! Copyright 2013 Daniel R. Reynolds
+!
+! This software is released under the terms of the "Enzo Public License"
+! in the accompanying LICENSE file.
+!=======================================================================
+
+
+function DFLD_limiter(E1, E2, k1, k2, nUn, lUn, tUn, dxi, XrUv)
+!=======================================================================
+!  written by: Daniel R. Reynolds
+!  date:       February 2013
+!  modified:   
+!
+!  PURPOSE: Computes the flux limiter at a given face
+!=======================================================================
+  implicit none
+  real*8,  intent(in) :: E1, E2, k1, k2, nUn, lUn, tUn, dxi
+  integer, intent(in) :: XrUv
+  real*8 :: DFLD_limiter, Eavg, kap, R, Emin, Rmin, Dmax, c
+  
+  ! speed of light [cm/s]
+  c = 2.99792458d10
+
+  ! set limiter bounds based on X-ray vs UV radiation
+  Emin = 1.d-30
+  if (XrUv == 0) then     ! X-ray
+     Rmin = 1.d-2/lUn
+     Dmax = 10.d0*c*lUn
+  else                    ! UV
+     Rmin = 1.d-2/lUn
+     Dmax = 1.d0*c*lUn
+  end if
+     
+  ! compute limiter
+  Eavg = max((E1 + E2)*0.5d0, Emin)
+  kap = 2.d0*k1*k2/(k1+k2)*nUn        ! harmonic average
+  R = max(dxi*abs(E1 - E2)/Eavg, Rmin)
+  DFLD_limiter = min(c/sqrt(9.d0*kap*kap + R*R), Dmax)
+
+end function DFLD_limiter
+!=======================================================================
+
+
+
+
+subroutine DualFLD_SetupSystem(mat, rhs, rhsnorm, E, kappa, src, dt, a, &
+     a0, adot, adot0, ESpectrum, theta, aUn, lUn, lUn0, rUn, rUn0, nUn, &
+     nUn0, tUn, rank, dx, BC, N, NG, faces, XrUv, ier)
+!=======================================================================
+!  author: Daniel R. Reynolds
+!  date:   January 2013
+!
+!  PURPOSE: Computes the array of matrix stencil elements and vector of 
+!           rhs entries for the Grey FLD radiation problem,
+!              d_t E - Div(D(E)*Grad(E)) = -adot/a*E - c*kappa*E + src
+!           where D(E) is a nonlinear, face-centered, flux-limiter 
+!           depending on E.  Given the left/right radiation
+!           values EL and ER separated by a distance dx, we define 
+!              R = 2/dx* |ER - EL|/(ER + EL),
+!           and for the left/right opacities kappaL and kappaR,
+!              kappa = 2*kappaL*kappaR / (kappaL + kappaR).
+!           With these components, we compute the limiter as
+!                 D = c/sqrt(9*kappa^2 + R^2)
+!           The stencil has {7,5,3} non-zero elements per matrix row 
+!           (depending on whether the problem is 3D, 2D or 1D).
+!
+!           We in fact solve a scaled version of the equation.  Since 
+!           the values of E are in fact in normalized units 
+!           (E_true = E*rUn), we must scale src by rUn to achieve the
+!           correct equation.  Moreover, we do not solve the equation 
+!           directly, and instead solve for a correction to the current
+!           state such that the corrected solution satisfies the above 
+!           equation.  This helps with enforcement of boundary conditions,
+!           since they may be directly placed onto the current state, 
+!           and the correction need only refrain from interfering.
+!
+!  INPUTS:
+!     E          - radiation energy density at previous timestep
+!     kappa      - opacity
+!     src        - radiation source
+!     dt         - time step size
+!     a,a0       - cosmology expansion factor (new and old timesteps)
+!     adot,adot0 - da/dt and da0/dt
+!     ESpectrum  - flag denoting radiation field type:
+!                  (negative => monochromatic)
+!     theta      - implicit method parameter
+!     *Un,*Un0   - variable scaling constants (new and old time steps)
+!     rank       - 1, 2 or 3; the dimensionality of the problem
+!     dx(3)      - mesh spacing in each dimension
+!     BC(6)      - boundary condition types (xl, xr, yl, ...)
+!                     0->periodic
+!                     1->Dirichlet
+!                     2->Neumann
+!     N(3)       - active mesh size in each direction (x, y, z)
+!     NG(6)      - left/right ghost cells in each dim (xl, xr, yl, ...)
+!     faces(6)   - integer flag denoting whether dim/face 
+!                  is external to the domain (0->int, 1->ext)
+!     XrUv       - integer denoting whether this is the X-ray system (0) 
+!                  or the UV system (1) -- affects the choice of limiter.
+!
+!     Note: the vector inputs are of size (N(1) + NG(1) + NG(2)) in 
+!     the x-direction, others are similar.
+!
+!  OUTPUTS: 
+!     mat     - array of stencil values over the active domain
+!     rhs     - array of rhs values over the active domain
+!     rhsnorm - 2-norm of rhs array
+!     ier     - success/failure flag (0->failure, 1->success)
+!=======================================================================
+#include "fortran.def"
+  implicit none
+  
+  ! arguments
+  integer,  intent(in)  :: rank, ESpectrum, BC(6), N(3), NG(6), faces(6), XrUv
+  REALSUB,  intent(in)  :: a, a0, adot, adot0
+  REALSUBR, intent(in)  :: dt, theta, aUn, lUn, lUn0, rUn, rUn0, nUn, nUn0, tUn
+  REALSUBR, intent(in)  :: dx(3), E(*), kappa(*), src(*)
+  real*8,   intent(out) :: mat(*), rhs(*)
+  REALSUBR, intent(out) :: rhsnorm
+  integer,  intent(out) :: ier
+
+  !=======================================================================
+
+  ! call the appropriate routine based on problem rank
+  if (rank == 3) then
+     call DualFLD_SetupSystem3D(mat, rhs, rhsnorm, E, kappa, src, dt, a, &
+          a0, adot, adot0, ESpectrum, theta, aUn, lUn, lUn0, rUn, rUn0,  &
+          nUn, nUn0, tUn, dx, BC, N, NG, faces, XrUv, ier)
+  elseif (rank == 2) then
+     call DualFLD_SetupSystem2D(mat, rhs, rhsnorm, E, kappa, src, dt, a, &
+          a0, adot, adot0, ESpectrum, theta, aUn, lUn, lUn0, rUn, rUn0,  &
+          nUn, nUn0, tUn, dx, BC, N, NG, faces, XrUv, ier)
+  elseif (rank == 1) then
+     call DualFLD_SetupSystem1D(mat, rhs, rhsnorm, E, kappa, src, dt, a, &
+          a0, adot, adot0, ESpectrum, theta, aUn, lUn, lUn0, rUn, rUn0,  &
+          nUn, nUn0, tUn, dx, BC, N, NG, faces, XrUv, ier)
+  else
+     write(0,*) 'DualFLD_SetupSystem error: illegal rank =',rank
+  end if
+
+end subroutine DualFLD_SetupSystem
+!=======================================================================
+
+
+
+subroutine DualFLD_SetupSystem3D(mat, rhs, rhsnorm, E, kappa, src, dt, &
+     a, a0, adot, adot0, ESpectrum, theta, aUn, lUn, lUn0, rUn, rUn0,  &
+     nUn, nUn0, tUn, dx, BC, N, NG, faces, XrUv, ier)
+!=======================================================================
+!  PURPOSE: 3D version of the routine
+!=======================================================================
+#include "fortran.def"
+  implicit none
+  
+  ! arguments
+  integer,  intent(in)  :: ESpectrum, BC(6), N(3), NG(6), faces(6), XrUv
+  REALSUB,  intent(in)  :: a, a0, adot, adot0
+  REALSUBR, intent(in)  :: dt, theta, dx(3)
+  REALSUBR, intent(in)  :: aUn, lUn, lUn0, rUn, rUn0, nUn, nUn0, tUn
+  REALSUBR, intent(in), &
+       dimension(1-NG(1):N(1)+NG(2),1-NG(3):N(2)+NG(4),1-NG(5):N(3)+NG(6)) &
+       :: E, kappa, src
+  real*8,   intent(out) :: mat(7,N(1),N(2),N(3)), rhs(N(1),N(2),N(3))
+  REALSUBR, intent(out) :: rhsnorm
+  integer,  intent(out) :: ier
+
+  ! local vars
+  integer :: i, j, k
+  real*8  :: dtfac, dtfac0, kap, kap0, c, dxi, dxi0, dyi, dyi0, dzi, dzi0
+  real*8  :: afac, afac0, dxfac, dyfac, dzfac, dxfac0, dyfac0, dzfac0
+  real*8  :: D(6), D0(6), Ediff(6)
+  real*8, external :: DFLD_limiter
+
+!=======================================================================
+  
+  ! initialize outputs to zero, flag to success
+  mat     = 0.d0
+  rhs     = 0.d0
+  rhsnorm = 0.d0
+  ier     = 1
+
+  ! set shortcut values
+  dtfac  = dt*theta         ! time step conversion factor
+  dtfac0 = dt*(1.d0-theta)  ! time step conversion factor
+  if (ESpectrum < 0) then
+     afac  = 0.d0
+     afac0 = 0.d0
+  else
+     afac  = adot/a         ! expansion factor (new time)
+     afac0 = adot0/a0       ! expansion factor (old time)
+  endif
+  dxi  = 1.d0/dx(1)/lUn
+  dyi  = 1.d0/dx(2)/lUn
+  dzi  = 1.d0/dx(3)/lUn
+  dxi0 = 1.d0/dx(1)/lUn0
+  dyi0 = 1.d0/dx(2)/lUn0
+  dzi0 = 1.d0/dx(3)/lUn0
+  dxfac = dtfac*dxi*dxi
+  dyfac = dtfac*dyi*dyi
+  dzfac = dtfac*dzi*dzi
+  dxfac0 = dtfac0*dxi0*dxi0
+  dyfac0 = dtfac0*dyi0*dyi0
+  dzfac0 = dtfac0*dzi0*dzi0
+  c = 2.99792458d10     ! speed of light [cm/s]
+
+  !$omp parallel default(shared) private(i,j,k,Ediff,kap,kap0,D,D0) 
+
+  ! iterate over the active domain
+  !$omp do reduction(+:rhsnorm) schedule(static)
+  do k=1,N(3)
+     do j=1,N(2)
+        do i=1,N(1)
+
+           !--------------
+           ! z-directional limiter, lower face
+           Ediff(5) = E(i,j,k) - E(i,j,k-1)
+           D(5)  = DFLD_limiter(E(i,j,k), E(i,j,k-1), kappa(i,j,k), &
+                           kappa(i,j,k-1), nUn, lUn, tUn, dzi, XrUv)
+           D0(5) = DFLD_limiter(E(i,j,k), E(i,j,k-1), kappa(i,j,k), &
+                           kappa(i,j,k-1), nUn0, lUn0, tUn, dzi0, XrUv)
+
+           !--------------
+           ! y-directional limiter, lower face
+           Ediff(3) = E(i,j,k) - E(i,j-1,k)
+           D(3)  = DFLD_limiter(E(i,j,k), E(i,j-1,k), kappa(i,j,k), &
+                           kappa(i,j-1,k), nUn, lUn, tUn, dyi, XrUv)
+           D0(3) = DFLD_limiter(E(i,j,k), E(i,j-1,k), kappa(i,j,k), &
+                           kappa(i,j-1,k), nUn0, lUn0, tUn, dyi0, XrUv)
+
+           !--------------
+           ! x-directional limiter, lower face
+           Ediff(1) = E(i,j,k) - E(i-1,j,k)
+           D(1)  = DFLD_limiter(E(i,j,k), E(i-1,j,k), kappa(i,j,k), &
+                           kappa(i-1,j,k), nUn, lUn, tUn, dxi, XrUv)
+           D0(1) = DFLD_limiter(E(i,j,k), E(i-1,j,k), kappa(i,j,k), &
+                           kappa(i-1,j,k), nUn0, lUn0, tUn, dxi0, XrUv)
+
+           !--------------
+           ! x-directional limiter, upper face
+           Ediff(2) = E(i+1,j,k) - E(i,j,k)
+           D(2)  = DFLD_limiter(E(i,j,k), E(i+1,j,k), kappa(i,j,k), &
+                           kappa(i+1,j,k), nUn, lUn, tUn, dxi, XrUv)
+           D0(2) = DFLD_limiter(E(i,j,k), E(i+1,j,k), kappa(i,j,k), &
+                           kappa(i+1,j,k), nUn0, lUn0, tUn, dxi0, XrUv)
+
+           !--------------
+           ! y-directional limiter, upper face
+           Ediff(4) = E(i,j+1,k) - E(i,j,k)
+           D(4)  = DFLD_limiter(E(i,j,k), E(i,j+1,k), kappa(i,j,k), &
+                           kappa(i,j+1,k), nUn, lUn, tUn, dyi, XrUv)
+           D0(4) = DFLD_limiter(E(i,j,k), E(i,j+1,k), kappa(i,j,k), &
+                           kappa(i,j+1,k), nUn0, lUn0, tUn, dyi0, XrUv)
+
+           !--------------
+           ! z-directional limiter, upper face
+           Ediff(6) = E(i,j,k+1) - E(i,j,k)
+           D(6)  = DFLD_limiter(E(i,j,k), E(i,j,k+1), kappa(i,j,k), &
+                           kappa(i,j,k+1), nUn, lUn, tUn, dzi, XrUv)
+           D0(6) = DFLD_limiter(E(i,j,k), E(i,j,k+1), kappa(i,j,k), &
+                           kappa(i,j,k+1), nUn0, lUn0, tUn, dzi0, XrUv)
+
+           ! opacity values in this cell
+           kap  = kappa(i,j,k)*nUn
+           kap0 = kap/nUn*nUn0
+
+           ! set the matrix entries.  Note: the diffusive component 
+           ! need not be rescaled, since scaling and chain rule cancel 
+           mat(1,i,j,k) = -dzfac*D(5)    ! z-left
+           mat(2,i,j,k) = -dyfac*D(3)    ! y-left
+           mat(3,i,j,k) = -dxfac*D(1)    ! x-left
+           mat(4,i,j,k) = 1.d0 + dtfac*(afac + c*kap)  &   ! self
+                + dxfac*(D(1)+D(2)) + dyfac*(D(3)+D(4)) + dzfac*(D(5)+D(6))
+           mat(5,i,j,k) = -dxfac*D(2)    ! x-right
+           mat(6,i,j,k) = -dyfac*D(4)    ! y-right
+           mat(7,i,j,k) = -dzfac*D(6)    ! z-right
+
+           ! set the rhs entries
+           rhs(i,j,k) = ( (dtfac/rUn + dtfac0/rUn0)*src(i,j,k)                 &
+                      - (dtfac*(afac+c*kap) + dtfac0*(afac0+c*kap0))*E(i,j,k)  &
+                      + dxfac0*(D0(2)*Ediff(2) - D0(1)*Ediff(1))               &
+                      + dyfac0*(D0(4)*Ediff(4) - D0(3)*Ediff(3))               &
+                      + dzfac0*(D0(6)*Ediff(6) - D0(5)*Ediff(5))               &
+                      + dxfac*(D(2)*Ediff(2) - D(1)*Ediff(1))                  &
+                      + dyfac*(D(4)*Ediff(4) - D(3)*Ediff(3))                  &
+                      + dzfac*(D(6)*Ediff(6) - D(5)*Ediff(5)) )
+           rhsnorm = rhsnorm + rhs(i,j,k)**2
+
+        enddo
+     enddo
+  enddo
+  !$omp end do
+
+  ! update matrix/rhs based on boundary conditions/location
+  !$omp sections
+  
+  !$omp section
+  if (faces(5) == 1) then   ! z-left face
+     if (BC(5)==1) then          ! Dirichlet
+        k = 1
+        do j=1,N(2)
+           do i=1,N(1)
+              mat(1,i,j,k) = 0.d0
+           enddo
+        enddo
+     else if (BC(5)==2) then     ! Neumann
+        k = 1
+        do j=1,N(2)
+           do i=1,N(1)
+              mat(4,i,j,k) = mat(4,i,j,k) + mat(1,i,j,k)
+              mat(1,i,j,k) = 0.d0
+           enddo
+        enddo
+     endif
+  end if
+  !$omp end section
+
+  !$omp section
+  if (faces(3) == 1) then   ! y-left face
+     if (BC(3)==1) then          ! Dirichlet
+        j = 1
+        do k=1,N(3)
+           do i=1,N(1)
+              mat(2,i,j,k) = 0.d0
+           enddo
+        enddo
+     else if (BC(3)==2) then     ! Neumann
+        j = 1
+        do k=1,N(3)
+           do i=1,N(1)
+              mat(4,i,j,k) = mat(4,i,j,k) + mat(2,i,j,k)
+              mat(2,i,j,k) = 0.d0
+           enddo
+        enddo
+     endif
+  end if
+  !$omp end section
+
+  !$omp section
+  if (faces(1) == 1) then   ! x-left face
+     if (BC(1)==1)      then     ! Dirichlet
+        i = 1
+        do k=1,N(3)
+           do j=1,N(2)
+              mat(3,i,j,k) = 0.d0
+           enddo
+        enddo
+     else if (BC(1)==2) then     ! Neumann
+        i = 1
+        do k=1,N(3)
+           do j=1,N(2)
+              mat(4,i,j,k) = mat(4,i,j,k) + mat(3,i,j,k)
+              mat(3,i,j,k) = 0.d0
+           enddo
+        enddo
+     endif
+  end if
+  !$omp end section
+
+  !$omp section
+  if (faces(2) == 1) then   ! x-right face
+     if (BC(2)==1) then          ! Dirichlet
+        i = N(1)
+        do k=1,N(3)
+           do j=1,N(2)
+              mat(5,i,j,k) = 0.d0
+           enddo
+        enddo
+     else if (BC(2)==2) then     ! Neumann
+        i = N(1)
+        do k=1,N(3)
+           do j=1,N(2)
+              mat(4,i,j,k) = mat(4,i,j,k) + mat(5,i,j,k)
+              mat(5,i,j,k) = 0.d0
+           enddo
+        enddo
+     endif
+  endif
+  !$omp end section
+
+  !$omp section
+  if (faces(4) == 1) then   ! y-right face
+     if (BC(4)==1) then          ! Dirichlet
+        j = N(2)
+        do k=1,N(3)
+           do i=1,N(1)
+              mat(6,i,j,k) = 0.d0
+           enddo
+        enddo
+     else if (BC(4)==2) then     ! Neumann
+        j = N(2)
+        do k=1,N(3)
+           do i=1,N(1)
+              mat(4,i,j,k) = mat(4,i,j,k) + mat(6,i,j,k)
+              mat(6,i,j,k) = 0.d0
+           enddo
+        enddo
+     endif
+  endif
+  !$omp end section
+
+  !$omp section
+  if (faces(6) == 1) then   ! z-right face
+     if (BC(6)==1) then          ! Dirichlet
+        k = N(3)
+        do j=1,N(2)
+           do i=1,N(1)
+              mat(7,i,j,k) = 0.d0
+           enddo
+        enddo
+     else if (BC(6)==2) then     ! Neumann
+        k = N(3)
+        do j=1,N(2)
+           do i=1,N(1)
+              mat(4,i,j,k) = mat(4,i,j,k) + mat(7,i,j,k)
+              mat(7,i,j,k) = 0.d0
+           enddo
+        enddo
+     endif
+  endif
+  !$omp end section
+
+  !$omp end parallel
+
+  return
+end subroutine DualFLD_SetupSystem3D
+!=======================================================================
+
+
+
+subroutine DualFLD_SetupSystem2D(mat, rhs, rhsnorm, E, kappa, src, dt, &
+     a, a0, adot, adot0, ESpectrum, theta, aUn, lUn, lUn0, rUn, rUn0,  &
+     nUn, nUn0, tUn, dx, BC, N, NG, faces, XrUv, ier)
+!=======================================================================
+!  PURPOSE: 2D version of the routine
+!=======================================================================
+#include "fortran.def"
+  implicit none
+  
+  ! arguments
+  integer,  intent(in)  :: ESpectrum, BC(4), N(2), NG(4), faces(4), XrUv
+  REALSUB,  intent(in)  :: a, a0, adot, adot0
+  REALSUBR, intent(in)  :: dt, theta, dx(2)
+  REALSUBR, intent(in)  :: aUn, lUn, lUn0, rUn, rUn0, nUn, nUn0, tUn
+  REALSUBR, intent(in), dimension(1-NG(1):N(1)+NG(2),1-NG(3):N(2)+NG(4)) &
+       :: E, kappa, src
+  real*8,   intent(out) :: mat(5,N(1),N(2)),  rhs(N(1),N(2))
+  REALSUBR, intent(out) :: rhsnorm
+  integer,  intent(out) :: ier
+
+  ! local vars
+  integer :: i, j
+  real*8  :: dtfac, dtfac0, kap, kap0, c, dxi, dxi0, dyi, dyi0
+  real*8  :: afac, afac0, dxfac, dyfac, dxfac0, dyfac0
+  real*8  :: D(4), D0(4), Ediff(4)
+  real*8, external :: DFLD_limiter
+
+!=======================================================================
+  
+  ! initialize outputs to zero, flag to success
+  mat     = 0.d0
+  rhs     = 0.d0
+  rhsnorm = 0.d0
+  ier     = 1
+
+  ! set shortcut values
+  dtfac  = dt*theta         ! time step conversion factor
+  dtfac0 = dt*(1.d0-theta)  ! time step conversion factor
+  if (ESpectrum < 0) then
+     afac  = 0.d0
+     afac0 = 0.d0
+  else
+     afac  = adot/a         ! expansion factor (new time)
+     afac0 = adot0/a0       ! expansion factor (old time)
+  endif
+  dxi  = 1.d0/dx(1)/lUn
+  dyi  = 1.d0/dx(2)/lUn
+  dxi0 = 1.d0/dx(1)/lUn0
+  dyi0 = 1.d0/dx(2)/lUn0
+  dxfac = dtfac*dxi*dxi
+  dyfac = dtfac*dyi*dyi
+  dxfac0 = dtfac0*dxi0*dxi0
+  dyfac0 = dtfac0*dyi0*dyi0
+  c = 2.99792458d10      ! speed of light [cm/s]
+
+  !$omp parallel default(shared) private(i,j,Ediff,kap,kap0,D,D0) 
+
+  ! iterate over the active domain
+  !$omp do reduction(+:rhsnorm) schedule(static)
+  do j=1,N(2)
+     do i=1,N(1)
+
+        !--------------
+        ! y-directional limiter, lower face
+        Ediff(3) = E(i,j) - E(i,j-1)
+        D(3)  = DFLD_limiter(E(i,j), E(i,j-1), kappa(i,j), kappa(i,j-1), &
+                        nUn, lUn, tUn, dyi, XrUv)
+        D0(3) = DFLD_limiter(E(i,j), E(i,j-1), kappa(i,j), kappa(i,j-1), &
+                        nUn0, lUn0, tUn, dyi0, XrUv)
+
+        !--------------
+        ! x-directional limiter, lower face
+        Ediff(1) = E(i,j) - E(i-1,j)
+        D(1)  = DFLD_limiter(E(i,j), E(i-1,j), kappa(i,j), kappa(i-1,j), &
+                        nUn, lUn, tUn, dxi, XrUv)
+        D0(1) = DFLD_limiter(E(i,j), E(i-1,j), kappa(i,j), kappa(i-1,j), &
+                        nUn0, lUn0, tUn, dxi0, XrUv)
+
+        !--------------
+        ! x-directional limiter, upper face
+        Ediff(2) = E(i+1,j) - E(i,j)
+        D(2)  = DFLD_limiter(E(i,j), E(i+1,j), kappa(i,j), kappa(i+1,j), &
+                        nUn, lUn, tUn, dxi, XrUv)
+        D0(2) = DFLD_limiter(E(i,j), E(i+1,j), kappa(i,j), kappa(i+1,j), &
+                        nUn0, lUn0, tUn, dxi0, XrUv)
+
+        !--------------
+        ! y-directional limiter, upper face
+        Ediff(4) = E(i,j+1) - E(i,j)
+        D(4)  = DFLD_limiter(E(i,j), E(i,j+1), kappa(i,j), kappa(i,j+1), &
+                        nUn, lUn, tUn, dyi, XrUv)
+        D0(4) = DFLD_limiter(E(i,j), E(i,j+1), kappa(i,j), kappa(i,j+1), &
+                        nUn0, lUn0, tUn, dyi0, XrUv)
+
+        ! opacity values in this cell
+        kap  = kappa(i,j)*nUn
+        kap0 = kap/nUn*nUn0
+
+        ! set the matrix entries.  Note: the diffusive component 
+        ! need not be rescaled, since scaling and chain rule cancel 
+        mat(1,i,j) = -dyfac*D(3)     ! y-left
+        mat(2,i,j) = -dxfac*D(1)     ! x-left
+        mat(3,i,j) = 1.d0 + dtfac*(afac + c*kap)  &
+                   + dxfac*(D(1)+D(2))+dyfac*(D(3)+D(4))  ! self
+        mat(4,i,j) = -dxfac*D(2)     ! x-right
+        mat(5,i,j) = -dyfac*D(4)     ! y-right
+
+        ! set the rhs entries
+        rhs(i,j) = ( (dtfac/rUn + dtfac0/rUn0)*src(i,j)                 &
+                 - (dtfac*(afac+c*kap) + dtfac0*(afac0+c*kap0))*E(i,j)  &
+                 + dxfac0*(D0(2)*Ediff(2) - D0(1)*Ediff(1))             &
+                 + dyfac0*(D0(4)*Ediff(4) - D0(3)*Ediff(3))             &
+                 + dxfac*(D(2)*Ediff(2) - D(1)*Ediff(1))                &
+                 + dyfac*(D(4)*Ediff(4) - D(3)*Ediff(3)) )
+        rhsnorm = rhsnorm + rhs(i,j)**2
+
+     enddo
+  enddo
+  !$omp end do
+  
+  ! update matrix/rhs based on boundary conditions/location
+  !$omp sections
+
+  !$omp section
+  if (faces(3) == 1) then   ! y-left face
+     if (BC(3)==1) then          ! Dirichlet
+        j = 1
+        do i=1,N(1)
+           mat(1,i,j) = 0.d0
+        enddo
+     else if (BC(3)==2) then     ! Neumann
+        j = 1
+        do i=1,N(1)
+           mat(3,i,j) = mat(3,i,j) + mat(1,i,j)
+           mat(1,i,j) = 0.d0
+        enddo
+     endif
+  end if
+  !$omp end section
+
+  !$omp section
+  if (faces(1) == 1) then   ! x-left face
+     if (BC(1)==1) then          ! Dirichlet
+        i = 1
+        do j=1,N(2)
+           mat(2,i,j) = 0.d0
+        enddo
+     else if (BC(1)==2) then     ! Neumann
+        i = 1
+        do j=1,N(2)
+           mat(3,i,j) = mat(3,i,j) + mat(2,i,j)
+           mat(2,i,j) = 0.d0
+        enddo
+     endif
+  end if
+  !$omp end section
+
+  !$omp section
+  if (faces(2) == 1) then   ! x-right face
+     if (BC(2)==1) then          ! Dirichlet
+        i = N(1)
+        do j=1,N(2)
+           mat(4,i,j) = 0.d0
+        enddo
+     else if (BC(2)==2) then     ! Neumann
+        i = N(1)
+        do j=1,N(2)
+           mat(3,i,j) = mat(3,i,j) + mat(4,i,j)
+           mat(4,i,j) = 0.d0
+        enddo
+     endif
+  endif
+  !$omp end section
+
+  !$omp section
+  if (faces(4) == 1) then   ! y-right face
+     if (BC(4)==1) then          ! Dirichlet
+        j = N(2)
+        do i=1,N(1)
+           mat(5,i,j) = 0.d0
+        enddo
+     else if (BC(4)==2) then     ! Neumann
+        j = N(2)
+        do i=1,N(1)
+           mat(3,i,j) = mat(3,i,j) + mat(5,i,j)
+           mat(5,i,j) = 0.d0
+        enddo
+     endif
+  endif
+  !$omp end section
+
+  !$omp end parallel
+
+  return
+end subroutine DualFLD_SetupSystem2D
+!=======================================================================
+
+
+
+subroutine DualFLD_SetupSystem1D(mat, rhs, rhsnorm, E, kappa, src, dt, &
+     a, a0, adot, adot0, ESpectrum, theta, aUn, lUn, lUn0, rUn, rUn0,  &
+     nUn, nUn0, tUn, dx, BC, N, NG, faces, XrUv, ier)
+!=======================================================================
+!  PURPOSE: 1D version of the routine
+!=======================================================================
+#include "fortran.def"
+  implicit none
+  
+  ! arguments
+  integer,  intent(in)  :: ESpectrum, BC(2), N, NG(2), faces(2), XrUv
+  REALSUB,  intent(in)  :: a, a0, adot, adot0
+  REALSUBR, intent(in)  :: dt, theta, dx
+  REALSUBR, intent(in)  :: aUn, lUn, lUn0, rUn, rUn0, nUn, nUn0, tUn
+  REALSUBR, intent(in), dimension(1-NG(1):N+NG(2)) :: E, kappa, src
+  real*8,   intent(out) :: mat(3,N),  rhs(N)
+  REALSUBR, intent(out) :: rhsnorm
+  integer,  intent(out) :: ier
+
+  ! local vars
+  integer :: i
+  real*8  :: kap, kap0, c, dxi, dxi0
+  real*8  :: dtfac, dtfac0, afac, afac0, dxfac, dxfac0
+  real*8  :: D(2), D0(2), Ediff(2)
+  real*8, external :: DFLD_limiter
+
+!=======================================================================
+  
+  ! initialize outputs to zero, flag to success
+  mat     = 0.d0
+  rhs     = 0.d0
+  rhsnorm = 0.d0
+  ier     = 1
+
+  ! set shortcut values
+  dtfac  = dt*theta         ! time step conversion factor
+  dtfac0 = dt*(1.d0-theta)  ! time step conversion factor
+  if (ESpectrum < 0) then
+     afac  = 0.d0
+     afac0 = 0.d0
+  else
+     afac  = adot/a         ! expansion factor (new time)
+     afac0 = adot0/a0       ! expansion factor (old time)
+  endif
+  dxi  = 1.d0/dx/lUn
+  dxi0 = 1.d0/dx/lUn0
+  dxfac = dtfac*dxi*dxi
+  dxfac0 = dtfac0*dxi0*dxi0
+  c = 2.99792458d10      ! speed of light [cm/s]
+
+  !$omp parallel default(shared) private(i,Ediff,kap,kap0,D,D0)
+
+  ! iterate over the active domain
+  !$omp do reduction(+:rhsnorm) schedule(static)
+  do i=1,N
+
+     !--------------
+     ! x-directional limiter, lower face
+     Ediff(1) = E(i) - E(i-1)
+     D(1)  = DFLD_limiter(E(i), E(i-1), kappa(i), kappa(i-1), &
+                     nUn, lUn, tUn, dxi, XrUv)
+     D0(1) = DFLD_limiter(E(i), E(i-1), kappa(i), kappa(i-1), &
+                     nUn0, lUn0, tUn, dxi0, XrUv)
+
+     !--------------
+     ! x-directional limiter, upper face
+     Ediff(2) = E(i+1) - E(i)
+     D(2)  = DFLD_limiter(E(i), E(i+1), kappa(i), kappa(i+1), &
+                     nUn, lUn, tUn, dxi, XrUv)
+     D0(2) = DFLD_limiter(E(i), E(i+1), kappa(i), kappa(i+1), &
+                     nUn0, lUn0, tUn, dxi0, XrUv)
+
+     ! opacity values in this cell
+     kap  = kappa(i)*nUn
+     kap0 = kap/nUn*nUn0
+
+     ! set the matrix entries.  Note: the diffusive component 
+     ! need not be rescaled, since scaling and chain rule cancel 
+     mat(1,i) = -dxfac*D(1)        ! x-left
+     mat(2,i) = 1.d0 + dtfac*(afac + c*kap) + dxfac*(D(1)+D(2))  ! self
+     mat(3,i) = -dxfac*D(2)        ! x-right
+
+     ! set the rhs entries
+     rhs(i) = ( (dtfac/rUn + dtfac0/rUn0)*src(i)                  &
+            - (dtfac*(afac+c*kap) + dtfac0*(afac0+c*kap0))*E(i)   &
+            + dxfac0*(D0(2)*Ediff(2)-D0(1)*Ediff(1))              &
+            + dxfac*(D(2)*Ediff(2)-D(1)*Ediff(1)) )
+     rhsnorm = rhsnorm + rhs(i)**2
+
+  enddo
+  !$omp end do
+
+  ! update matrix/rhs based on boundary conditions/location
+  !$omp sections
+
+  !$omp section
+  if (faces(1) == 1) then   ! x-left face
+     if (BC(1)==1) then          ! Dirichlet
+        i = 1
+        mat(1,i) = 0.d0
+     else if (BC(1)==2) then     ! Neumann
+        i = 1
+        mat(2,i) = mat(2,i) + mat(1,i)
+        mat(1,i) = 0.d0
+     endif
+  end if
+  !$omp end section
+
+  !$omp section
+  if (faces(2) == 1) then   ! x-right face
+     if (BC(2)==1) then          ! Dirichlet
+        i = N
+        mat(3,i) = 0.d0
+     else if (BC(2)==2) then     ! Neumann
+        i = N
+        mat(2,i) = mat(2,i) + mat(3,i)
+        mat(3,i) = 0.d0
+     endif
+  endif
+  !$omp end section
+
+  !$omp end parallel
+
+  return
+end subroutine DualFLD_SetupSystem1D
+!=======================================================================

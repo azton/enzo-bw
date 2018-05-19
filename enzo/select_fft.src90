@@ -1,0 +1,295 @@
+
+      subroutine fortfft(x, rank, dim1, dim2, dim3, dir)
+
+      implicit none
+
+      integer :: rank, dim1, dim2, dim3, dir
+      complex :: x(dim1,dim2,dim3)
+
+      integer :: method
+
+      character (len=8) :: choice
+
+      real*8 :: t0, t1, t2, wall_clock
+
+      external :: cray_st1
+      external :: acml_st1
+      external :: mkl_st1
+      external :: ibm_st1
+      external :: sgi_st1
+      external :: s90_st1
+      external :: s66_st1
+      external :: ffte_st1
+
+!     t0 = wall_clock()
+!     t1 = wall_clock()
+
+      method = 2  ! FFT method
+                  !  1 = 1D, 2D & 3D explicit calls
+                  !  2 = 1D stride-1 FFT with wrappers
+
+      if ( method == 1 ) then
+
+#ifdef USE_ESSL_FFT
+        choice = "essl"
+#define GOT_FFT_1
+#endif
+
+#ifdef USE_CRAYX1_FFT
+        choice = "crayx1"
+#define GOT_FFT_1
+#endif
+
+      end if
+
+
+      if ( method == 2 ) then
+
+#ifdef USE_ESSL_FFT
+        choice = "essl"
+#define GOT_FFT_2
+#endif
+
+#ifdef USE_SGI_FFT
+        choice = "sgi"
+#define GOT_FFT_2
+#endif
+
+#ifdef USE_CRAYX1_FFT
+        choice = "crayx1"
+#define GOT_FFT_2
+#endif
+
+#ifdef USE_FFTE_FFT
+        choice = "ffte"
+#define GOT_FFT_2
+#endif
+
+#ifdef USE_MKL_FFT
+        choice = "mkl"
+#define GOT_FFT_2
+#endif
+
+#ifdef USE_S90_FFT
+        choice = "s90"
+#define GOT_FFT_2
+#endif
+
+#ifdef USE_S66_FFT
+        choice = "s66"
+#define GOT_FFT_2
+#endif
+
+      end if
+
+#ifndef GOT_FFT_1
+        method = 2
+#endif
+
+#ifndef GOT_FFT_2
+        choice = "ffte"
+#endif
+
+
+      if( rank == 3 ) then
+
+        if( method == 1 ) then
+
+          select case ( choice )
+
+            case default
+!             write(0,'("No native 3D FFT - calling stride 1 FFT")')
+              method = 2
+
+            case ("crayx1")
+!             write(0,'("Cray X1 3D FFT")')
+              call cray_3d(x, rank, dim1, dim2, dim3, dir)
+
+            case("essl")
+!             write(0,'("IBM ESSL 3D FFT")')
+              call ibm_3d(x, rank, dim1, dim2, dim3, dir)
+
+          end select
+
+        end if
+
+        if( method == 2 ) then
+
+          select case ( choice )
+
+            case default
+!             write(0,'("3D Stride 1 call to S90 FFT")')
+              call wrapper3d(x, rank, dim1, dim2, dim3, dir, s90_st1)
+
+            case ("essl")
+!             write(0,'("3D Stride 1 call to IBM ESSL FFT")')
+              call wrapper3d(x, rank, dim1, dim2, dim3, dir, ibm_st1)
+
+            case ("sgi")
+!             write(0,'("3D Stride 1 call to ALTIX SCSL FFT")')
+              call wrapper3d(x, rank, dim1, dim2, dim3, dir, sgi_st1)
+
+            case ("acml")
+!             write(0,'("3D Stride 1 call to ACML FFT")')
+              call wrapper3d(x, rank, dim1, dim2, dim3, dir, acml_st1)
+
+            case ("mkl")
+!             write(0,'("3D Stride 1 call to MKL FFT")')
+              call wrapper3d(x, rank, dim1, dim2, dim3, dir, mkl_st1)
+
+            case ("ffte")
+!             write(0,'("3D Stride 1 call to FFTE")')
+              call wrapper3d(x, rank, dim1, dim2, dim3, dir, ffte_st1)
+
+            case ("s90")
+!             write(0,'("3D Stride 1 call to S90 FFT")')
+              call wrapper3d(x, rank, dim1, dim2, dim3, dir, s90_st1)
+
+            case ("s66")
+!             write(0,'("3D Stride 1 call to S66 FFT")')
+              call wrapper3d(x, rank, dim1, dim2, dim3, dir, s66_st1)
+
+          end select
+
+        end if
+
+      end if
+
+
+      if( rank == 2 ) then
+
+        if( method == 1 ) then
+
+          select case ( choice )
+
+            case default
+!             write(0,'("No native 2D FFT - calling stride 1 FFT")')
+              method = 2
+
+            case ("crayx1")
+!             write(0,'("Cray X1 2D FFT")')
+              call cray_2d(x, rank, dim1, dim2, dim3, dir)
+
+            case ("essl")
+!             write(0,'("IBM ESSL 2D FFT")')
+              call ibm_2d(x, rank, dim1, dim2, dim3, dir)
+
+          end select
+
+        end if
+
+
+        if( method == 2 ) then
+
+          select case ( choice )
+
+            case default
+!             write(0,'("2D Stride 1 call to S90 FFT")')
+              call wrapper2d(x, rank, dim1, dim2, dim3, dir, s90_st1)
+
+            case ("essl")
+!             write(0,'("2D Stride 1 call to IBM ESSL FFT")')
+              call wrapper2d(x, rank, dim1, dim2, dim3, dir, ibm_st1)
+
+            case ("sgi")
+!             write(0,'("2D Stride 1 call to ALTIX SCSL FFT")')
+              call wrapper2d(x, rank, dim1, dim2, dim3, dir, sgi_st1)
+
+            case ("acml")
+!             write(0,'("2D Stride 1 call to ACML FFT")')
+              call wrapper2d(x, rank, dim1, dim2, dim3, dir, acml_st1)
+
+            case ("mkl")
+!             write(0,'("2D Stride 1 call to MKL FFT")')
+              call wrapper2d(x, rank, dim1, dim2, dim3, dir, mkl_st1)
+
+            case ("ffte")
+!             write(0,'("2D Stride 1 call to FFTE")')
+              call wrapper2d(x, rank, dim1, dim2, dim3, dir, ffte_st1)
+
+            case ("s90")
+!             write(0,'("2D Stride 1 call to S90 FFT")')
+              call wrapper2d(x, rank, dim1, dim2, dim3, dir, s90_st1)
+
+            case ("s66")
+!             write(0,'("2D Stride 1 call to S66 FFT")')
+              call wrapper2d(x, rank, dim1, dim2, dim3, dir, s66_st1)
+
+          end select
+
+        end if
+
+      end if
+
+
+      if( rank == 1 ) then
+
+        if( method == 1 ) then
+
+          select case ( choice )
+
+            case default
+!             write(0,'("No native 1D FFT - calling stride 1 FFT")')
+              method = 2
+
+            case ("crayx1")
+!             write(0,'("Cray X1 1D FFT")')
+              call cray_1d(x, rank, dim1, dim2, dim3, dir)
+
+            case ("essl")
+!             write(0,'("IBM ESSL 1D FFT")')
+              call ibm_1d(x, rank, dim1, dim2, dim3, dir)
+
+          end select
+
+        end if
+
+
+        if( method == 2 ) then
+
+          select case ( choice )
+
+            case default
+!             write(0,'("1D Stride 1 call to S90 FFT")')
+              call wrapper1d(x, rank, dim1, dim2, dim3, dir, s90_st1)
+
+            case ("essl")
+!             write(0,'("1D Stride 1 call to IBM ESSL FFT")')
+              call wrapper1d(x, rank, dim1, dim2, dim3, dir, ibm_st1)
+
+            case ("sgi")
+!             write(0,'("1D Stride 1 call to ALTIX SCSL FFT")')
+              call wrapper1d(x, rank, dim1, dim2, dim3, dir, sgi_st1)
+
+            case ("acml")
+!             write(0,'("1D Stride 1 call to ACML SCSL FFT")')
+              call wrapper1d(x, rank, dim1, dim2, dim3, dir, acml_st1)
+
+            case ("mkl")
+!             write(0,'("1D Stride 1 call to MKL FFT")')
+              call wrapper1d(x, rank, dim1, dim2, dim3, dir, mkl_st1)
+
+            case ("ffte")
+!             write(0,'("1D Stride 1 call to FFTE")')
+              call wrapper1d(x, rank, dim1, dim2, dim3, dir, ffte_st1)
+
+            case ("s90")
+!             write(0,'("1D Stride 1 call to S90 FFT")')
+              call wrapper1d(x, rank, dim1, dim2, dim3, dir, s90_st1)
+
+            case ("s66")
+!             write(0,'("1D Stride 1 call to S66 FFT")')
+              call wrapper1d(x, rank, dim1, dim2, dim3, dir, s66_st1)
+
+          end select
+
+        end if
+
+      end if
+
+!     t2 = wall_clock()
+
+!     write(0,'("FFT time = ",f10.6)') t2-t1
+
+      return
+      end

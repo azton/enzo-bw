@@ -1,0 +1,93 @@
+#
+# macros for Nautilus
+#
+
+CPP          = /lib/cpp
+CPP_FLAG     = -traditional
+
+INTEL_HDF5_INSTALL = /opt/cray/hdf5/1.8.4.1/hdf5-intel
+INTEL_HDF5_INCLUDE = -I$(INTEL_HDF5_INSTALL)/include
+
+INTEL_HYPRE_INSTALL = /share/home/00770/harkness/Hypre/Intel/hypre-2.6.0b
+INTEL_HYPRE_INCLUDE = -I$(INTEL_HYPRE_INSTALL)/include
+
+INTEL_SZLIB_INSTALL = /sw/xt/szip/2.1/sles10.1_intel11.1.038
+INTEL_SPRNG_INSTALL = /none
+INTEL_SPRNG_INCLUDE = -I$(INTEL_SPRNG_INSTALL)/include
+
+AMD_ACML = /opt/apps/pgi7_2/acml/4.1.0/pgi64
+INTEL_ZLIB = /usr/lib
+
+ifeq ($(CRAYPAT_ROOT),$(null))
+XT5_PAT =
+XT5_PAT_INCLUDE =
+XT5_PAT_CONF = -DNO_USE_PAT
+else
+XT5_PAT = $(CRAYPAT_ROOT)/lib/xt-cnl/lib_pat.a
+XT5_PAT_INCLUDE = -I$(CRAYPAT_ROOT)/include
+XT5_PAT_CONF = -DUSE_PAT
+endif
+
+ifeq ($(ENZO_INT),LARGE_INTS)
+  ifeq ($(ENZO_XPR),r8)
+    INTEL_FC_PREC := -r8 -i8
+  else
+    INTEL_FC_PREC := -r4 -i8
+  endif
+else
+  ifeq ($(ENZO_XPR),r8)
+    INTEL_FC_PREC := -r8 -i4
+  else
+    INTEL_FC_PREC := -r4 -i4
+  endif
+endif
+
+INTEL_FC_ARITH = -fp-model source -fp-model precise -fpconstant -ftz -prec_div -prec_sqrt -fp_port -align -zero
+INTEL_FC_THREAD =
+INTEL_FC_OPT = -O2 -extend-source -msse2 -inline-level=0
+INTEL_FC_DEBUG = -g -traceback -fpe0 -ftrapuv -fp-speculation off -opt-report 2 -vec-report 2 -openmp-report 2 -par-report 2
+
+INTEL_CC_ARITH = -fp-model source -fp-model precise -ftz -prec_div -prec_sqrt -fp_port -align -zero
+INTEL_CC_THREAD =
+INTEL_CC_OPT = -O2 -msse2 -inline-level=0
+INTEL_CC_DEBUG = -g -traceback -fpe0 -ftrapuv -fp-speculation off -opt-report 2 -vec-report 2 -openmp-report 2 -par-report 2
+
+INTEL_CXX_ARITH = -fp-model source -fp-model precise -ftz -prec_div -prec_sqrt -fp_port -align -zero
+INTEL_CXX_THREAD =
+INTEL_CXX_OPT = -O2 -msse2 -inline-level=0
+INTEL_CXX_DEBUG = -g -traceback -fpe0 -ftrapuv -fp-speculation off -opt-report 2 -vec-report 2 -openmp-report 2 -par-report 2
+
+
+## Fortran compiler
+FC           = ftn
+DEFINES      = -DXT3 -DUSE_MPI -DNO_IO_LOG
+FC_OPT       = $(INTEL_FC_OPT) $(INTEL_FC_THREAD) $(INTEL_FC_ARITH) $(INTEL_FC_PREC)
+
+## C Compiler
+CC           = cc
+CC_DEF       = -DXT3 -DMEM_TRACE -DUSE_MPI -DNO_IO_LOG -DSYSCALL
+CC_OPT       = $(INTEL_CC_OPT) $(INTEL_CC_THREAD) $(INTEL_CC_ARITH) $(CC_DEF)
+
+## C++ Compiler
+CCxx         = CC -DMPICH_IGNORE_CXX_SEEK -DH5_USE_16_API $(XT5_PAT_CONF) -lmpi
+CCxx_DEF     = -DXT3 -DMEM_TRACE -DUSE_MPI -DNO_IO_LOG -DSYSCALL
+CCxx_OPT     = $(INTEL_CXX_OPT) $(INTEL_CXX_THREAD) $(INTEL_CXX_ARITH) $(CCxx_DEF)
+
+## Linker/loader
+
+INTEL_LIB = /opt/intel/Compiler/11.1/038/lib/intel64
+INTEL_CXX_LINK = -L$(INTEL_LIB) -lifcore -lifport -lpthread -ldl
+
+LDR          = CC
+LDR_OPT      = $(INTEL_CXX_OPT) $(INTEL_CXX_THREAD) $(INTEL_CXX_ARITH)
+LIB          = \
+               $(INTEL_CXX_LINK) \
+               -L$(INTEL_HDF5_INSTALL)/lib -lhdf5 \
+               -L$(INTEL_SZLIB_INSTALL)/lib -lsz \
+               -lm -lz
+
+INCLUDE      = $(INTEL_HDF5_INCLUDE) $(INTEL_HYPRE_INCLUDE) $(XT5_PAT_INCLUDE)
+
+OPTIONS      = 
+OPTS         = -c ${OPTIONS} ${INCLUDE}
+DEBUG        =

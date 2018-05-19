@@ -1,0 +1,163 @@
+      subroutine wrapper3d(x, rank, nx, ny, nz, dir, method)
+
+!     Written by: Robert Harkness
+!     Date:       November, 2009
+
+      implicit none
+
+!     Arguments
+
+      external :: method
+      integer :: rank, nx, ny, nz, dir
+
+      integer :: n(3)
+      integer :: i, j, k
+
+      complex*16 :: x(nx,ny,nz)
+      complex*16 :: y(ny,nx,nz)
+      complex*16 :: z(nz,nx,ny)
+
+      complex*16 :: sxy(nx,ny), tyx(ny,nx)
+      complex*16 :: syz(ny,nz), tzy(nz,ny)
+
+      n(1) = nx
+      n(2) = 1
+      n(3) = 1
+
+      do k = 1, nz
+        do j = 1, ny
+          call fftwrap3d(x(1,j,k), n, dir, method)  ! length i
+        end do
+      end do
+
+      do k = 1, nz
+        do j = 1, ny
+          do i = 1, nx
+            sxy(i,j) = x(i,j,k)
+          end do
+        end do
+
+!     do k = 1, nz
+        do j = 1, ny
+          do i = 1, nx
+            tyx(j,i) = sxy(i,j)
+          end do
+        end do
+
+!     do k = 1, nz
+        do i = 1, nx
+          do j = 1, ny
+            y(j,i,k) = tyx(j,i)
+          end do
+        end do
+
+      end do
+
+      n(1) = ny
+      n(2) = 1
+      n(3) = 1
+
+      do k = 1, nz
+        do i = 1, nx
+          call fftwrap3d(y(1,i,k), n, dir, method)  ! length j
+        end do
+      end do
+
+
+      do i = 1, nx
+        do k = 1, nz
+          do j = 1, ny
+            syz(j,k) = y(j,i,k)
+          end do
+        end do
+
+!     do i = 1, nx
+        do k = 1, nz
+          do j = 1, ny
+            tzy(k, j) = syz(j,k)
+          end do
+        end do
+
+!     do i = 1, nx
+        do j = 1, ny
+          do k = 1, nz
+            z(k,i,j) = tzy(k,j)
+          end do
+        end do
+
+      end do
+
+      n(1) = nz
+      n(2) = 1
+      n(3) = 1
+
+      do j = 1, ny
+        do i = 1, nx
+          call fftwrap3d(z(1,i,j), n, dir, method)  ! length k
+        end do
+      end do
+
+      do i = 1, nx
+        do j = 1, ny
+          do k = 1, nz
+            tzy(k,j) = z(k,i,j)
+          end do
+        end do
+
+!     do i = 1, nx
+        do k = 1, nz
+          do j = 1, ny
+            syz(j,k) = tzy(k,j)
+          end do
+        end do
+
+!     do i = 1, nx
+        do k = 1, nz
+          do j = 1, ny
+            y(j,i,k) = syz(j,k)
+          end do
+        end do
+
+      end do
+   
+
+      do k = 1, nz
+        do i = 1, nx
+          do j = 1, ny
+            tyx(j,i) = y(j,i,k)
+          end do
+        end do
+
+!     do k = 1, nz
+        do j = 1, ny
+          do i = 1, nx
+            sxy(i,j) = tyx(j,i)
+          end do
+        end do
+
+!     do k = 1, nz
+        do j = 1, ny
+          do i = 1, nx
+            x(i,j,k) = sxy(i,j)
+          end do
+        end do
+
+      end do
+
+      return
+      end
+
+      subroutine fftwrap3d( a, n, dir, method )
+
+      implicit none
+
+      complex :: a(*)
+      integer :: n(3)
+      integer :: dir
+      external :: method
+
+      call method(a, n(1), dir)
+
+      return
+
+      end

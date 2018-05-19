@@ -1,0 +1,70 @@
+
+      subroutine fortfft(x, rank, dim1, dim2, dim3, dir)
+
+      implicit none
+
+      integer :: rank, dim1, dim2, dim3, dir
+      complex :: x(dim1,dim2,dim3)
+
+      integer :: method
+
+      character (len=8) :: choice
+
+      real*8 :: t0, t1, t2, wall_clock
+
+      t0 = wall_clock()
+      t1 = wall_clock()
+
+      method = 1  ! FFT method
+                  !  1 = 1D, 2D & 3D explicit calls
+                  !  2 = 1D stride-1 FFT with wrappers
+
+      if ( method == 1 ) then
+
+#ifdef SP2
+        choice = "power"
+#define GOT_FFT_1
+#endif
+
+#ifdef CRAYX1
+        choice = "crayx1"
+#define GOT_FFT_1
+#endif
+
+      end if
+
+
+      if( rank == 3 ) then
+
+        if( method == 1 ) then
+
+          select case ( choice )
+
+            case default
+              write(0,'("No native 3D FFT - calling stride 1 FFT")')
+              call exit
+
+            case ("crayx1")
+              write(0,'("Cray X1 3D FFT")')
+              call cray_3d(x, rank, dim1, dim2, dim3, dir)
+
+            case("power")
+              write(0,'("IBM ESSL 3D FFT")')
+              call ibm_3d(x, rank, dim1, dim2, dim3, dir)
+
+            case("nr")
+              write(0,'("Numerical Recipes 3D FFT - power of 2 only")')
+              call nr_3d(x, rank, dim1, dim2, dim3, dir)
+
+          end select
+
+        end if
+
+      end if
+
+      t2 = wall_clock()
+
+      write(0,'("FFT time = ",f10.6)') t2-t1
+
+      return
+      end

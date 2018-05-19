@@ -1,0 +1,39 @@
+This is close to the original version of Inits 2001.
+This is a single thread, non-MPI, shared-memory code.
+
+This version uses the standard C library routine drand48()
+but any random number generator can be use by modifying
+the routines enzo_seed() and enzo_rand().
+
+drand48 is probably sufficient up to 1024^3.
+For > 1024^3, use one of the other versions with SPRNG.
+For compatibility with ENZO prior to 2002, use one of
+the versions that reads a pre-defined random number
+sequence and generate the sequence with random/Ungood
+which uses the ancient ran1.src generator.
+
+This is a 64-bit floating point version (only) but one
+may select 32-bit or 64-bit integers.  32-bit integers
+are acceptable for up to 1024^3, which is the largest
+size that can be run safely with a drand48() random sequence.
+
+
+FFT choices
+
+1D, 2D and 3D native FFTs
+
+crayx1        Cray X1
+ibm           IBM ESSL
+nr            Numerical Recipes (power of 2 only)
+
+1D unit-stride wrappers
+
+acml_st1      AMD ACML
+crayx1_st1    Cray X1
+ffte_st1      FFTE
+ibm_st1       IBM ESSL
+mkl_st1       Intel MKL
+nr_st1        Numerical Recipes (power of 2 only)
+sgi_st1       SGI SCSL
+s66_st1       Singleton Fortran 66
+s90_st1       Singleton Fortran 90
